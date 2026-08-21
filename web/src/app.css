@@ -1,0 +1,60 @@
+@import 'tailwindcss';
+
+@theme {
+	--font-display: 'Bricolage Grotesque', sans-serif;
+	--font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+	--color-ink: #ece7dc;
+	--color-muted: #a39b8c;
+	--color-panel: #1c211c;
+	--color-panel-2: #262c26;
+	--color-line: #3a4236;
+	--color-amber: #e4b04a;
+	--color-go: #3f9d6c;
+	--color-stop: #d45b49;
+	--color-bg: #121512;
+}
+
+html,
+body {
+	min-height: 100%;
+	background: radial-gradient(1200px 600px at 10% -10%, #243024 0%, transparent 50%),
+		radial-gradient(900px 500px at 100% 0%, #2a2214 0%, transparent 45%), var(--color-bg);
+	color: var(--color-ink);
+	font-family: var(--font-display);
+}
+
+.clock-face {
+	font-family: var(--font-mono);
+	letter-spacing: 0.04em;
+	color: var(--color-amber);
+	text-shadow: 0 0 18px rgba(228, 176, 74, 0.25);
+}
+
+.panel {
+	background: color-mix(in srgb, var(--color-panel) 88%, transparent);
+	border: 1px solid var(--color-line);
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.fc {
+	--fc-page-bg-color: transparent;
+	--fc-neutral-bg-color: #1c211c;
+	--fc-border-color: #3a4236;
+	--fc-today-bg-color: rgba(228, 176, 74, 0.08);
+	--fc-now-indicator-color: #e4b04a;
+	--fc-event-bg-color: #2f5d45;
+	--fc-event-border-color: #3f9d6c;
+	--fc-button-bg-color: #262c26;
+	--fc-button-border-color: #3a4236;
+	--fc-button-hover-bg-color: #323a32;
+	--fc-button-active-bg-color: #3a4236;
+	--fc-page-text-color: #ece7dc;
+	color: #ece7dc;
+	font-family: var(--font-display);
+}
+
+.fc .fc-timegrid-slot-label,
+.fc .fc-event-time,
+.fc .fc-col-header-cell-cushion {
+	font-family: var(--font-mono);
+}

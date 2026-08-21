@@ -1,0 +1,55 @@
+services:
+  api:
+    build:
+      context: ./api
+    restart: unless-stopped
+    environment:
+      BIND: 0.0.0.0:3000
+      DATABASE_URL: sqlite:///data/timey.db
+      COOKIE_SECURE: "true"
+      SESSION_TTL_HOURS: "12"
+      BOOTSTRAP_ADMIN_USERNAME: ${BOOTSTRAP_ADMIN_USERNAME:-admin}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-changeme}
+      AUTH_LOCAL_ENABLED: "true"
+      AUTH_OIDC_ENABLED: "false"
+      TZ: Europe/Berlin
+    volumes:
+      - timey-data:/data
+    networks:
+      - proxy
+      - internal
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=${TRAEFIK_NETWORK:-proxy}
+      - traefik.http.routers.timey-api.rule=Host(`${TIMEY_HOST:-timey.localhost}`) && PathPrefix(`/api`)
+      - traefik.http.routers.timey-api.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}
+      - traefik.http.routers.timey-api.tls=true
+      - traefik.http.routers.timey-api.priority=100
+      - traefik.http.services.timey-api.loadbalancer.server.port=3000
+
+  web:
+    build:
+      context: ./web
+    restart: unless-stopped
+    depends_on:
+      - api
+    networks:
+      - proxy
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=${TRAEFIK_NETWORK:-proxy}
+      - traefik.http.routers.timey-web.rule=Host(`${TIMEY_HOST:-timey.localhost}`)
+      - traefik.http.routers.timey-web.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}
+      - traefik.http.routers.timey-web.tls=true
+      - traefik.http.routers.timey-web.priority=10
+      - traefik.http.services.timey-web.loadbalancer.server.port=80
+
+volumes:
+  timey-data:
+
+networks:
+  proxy:
+    external: true
+    name: ${TRAEFIK_NETWORK:-proxy}
+  internal:
+    driver: bridge

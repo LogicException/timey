@@ -1,0 +1,13 @@
+/target
+/api/target
+/api/*.db
+/api/*.db-*
+/api/data
+/data
+/web/node_modules
+/web/.svelte-kit
+/web/build
+/web/dist
+.env
+.DS_Store
+*.log

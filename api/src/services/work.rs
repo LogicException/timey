@@ -1,0 +1,226 @@
+use chrono::{DateTime, NaiveDate, Utc};
+use sqlx::SqlitePool;
+
+use crate::domain::{APP_TZ, WorkEvent, WorkEventKind, elapsed_seconds};
+use crate::error::{AppError, AppResult};
+use crate::models::{WorkEventRow, WorkSessionRow, WorkSessionStatus, parse_date, parse_rfc3339};
+use crate::services::entries::today;
+
+pub struct WorkSnapshot {
+    pub session: Option<WorkSessionRow>,
+    pub elapsed_seconds: i64,
+    pub local_date: NaiveDate,
+}
+
+pub async fn current(
+    pool: &SqlitePool,
+    user_id: i64,
+    now: DateTime<Utc>,
+) -> AppResult<WorkSnapshot> {
+    let local_date = today(now);
+    let sessions = sessions_on(pool, user_id, local_date).await?;
+    let open = sessions
+        .iter()
+        .find(|row| row.status != WorkSessionStatus::Stopped.as_str())
+        .cloned();
+
+    let mut total = 0;
+    for session in &sessions {
+        let events = events_for(pool, session.id).await?;
+        total += elapsed_seconds(&events, now);
+    }
+
+    Ok(WorkSnapshot {
+        session: open,
+        elapsed_seconds: total,
+        local_date,
+    })
+}
+
+pub async fn start(pool: &SqlitePool, user_id: i64, now: DateTime<Utc>) -> AppResult<WorkSnapshot> {
+    let local_date = today(now);
+    if let Some(open) = open_session(pool, user_id, local_date).await? {
+        let status = WorkSessionStatus::parse(&open.status);
+        return match status {
+            Some(WorkSessionStatus::Running) => {
+                Err(AppError::Conflict("Arbeitszeit läuft bereits".into()))
+            }
+            Some(WorkSessionStatus::Paused) => Err(AppError::Conflict(
+                "Arbeitszeit ist pausiert — fortsetzen statt starten".into(),
+            )),
+            _ => Err(AppError::Conflict(
+                "Offene Arbeitszeit-Session vorhanden".into(),
+            )),
+        };
+    }
+
+    let done = sqlx::query(
+        "INSERT INTO work_sessions (user_id, local_date, status, created_at) VALUES (?, ?, 'running', ?)",
+    )
+    .bind(user_id)
+    .bind(local_date.format("%Y-%m-%d").to_string())
+    .bind(now.to_rfc3339())
+    .execute(pool)
+    .await?;
+    insert_event(pool, done.last_insert_rowid(), WorkEventKind::Started, now).await?;
+    current(pool, user_id, now).await
+}
+
+pub async fn pause(pool: &SqlitePool, user_id: i64, now: DateTime<Utc>) -> AppResult<WorkSnapshot> {
+    let session = require_status(pool, user_id, now, WorkSessionStatus::Running).await?;
+    set_status(pool, session.id, WorkSessionStatus::Paused).await?;
+    insert_event(pool, session.id, WorkEventKind::Paused, now).await?;
+    current(pool, user_id, now).await
+}
+
+pub async fn resume(
+    pool: &SqlitePool,
+    user_id: i64,
+    now: DateTime<Utc>,
+) -> AppResult<WorkSnapshot> {
+    let session = require_status(pool, user_id, now, WorkSessionStatus::Paused).await?;
+    set_status(pool, session.id, WorkSessionStatus::Running).await?;
+    insert_event(pool, session.id, WorkEventKind::Resumed, now).await?;
+    current(pool, user_id, now).await
+}
+
+pub async fn stop(pool: &SqlitePool, user_id: i64, now: DateTime<Utc>) -> AppResult<WorkSnapshot> {
+    let local_date = today(now);
+    let session = open_session(pool, user_id, local_date)
+        .await?
+        .ok_or_else(|| AppError::Unprocessable("Keine laufende Arbeitszeit".into()))?;
+    set_status(pool, session.id, WorkSessionStatus::Stopped).await?;
+    insert_event(pool, session.id, WorkEventKind::Stopped, now).await?;
+    current(pool, user_id, now).await
+}
+
+pub async fn close_if_stale(pool: &SqlitePool, user_id: i64, now: DateTime<Utc>) -> AppResult<()> {
+    let rows = sqlx::query_as::<_, WorkSessionRow>(
+        "SELECT id, user_id, local_date, status, created_at FROM work_sessions
+         WHERE user_id = ? AND status != 'stopped'",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+
+    for row in rows {
+        let started_on = parse_date(&row.local_date)
+            .map_err(|_| AppError::Internal("local_date ungültig".into()))?;
+        if !crate::domain::needs_midnight_close(started_on, now, APP_TZ) {
+            continue;
+        }
+        let close_at = crate::domain::close_timestamp(started_on, APP_TZ)
+            .ok_or_else(|| AppError::Internal("Mitternachtszeit ungültig".into()))?;
+        if row.status == WorkSessionStatus::Running.as_str()
+            || row.status == WorkSessionStatus::Paused.as_str()
+        {
+            insert_event(pool, row.id, WorkEventKind::Stopped, close_at).await?;
+        }
+        set_status(pool, row.id, WorkSessionStatus::Stopped).await?;
+    }
+    Ok(())
+}
+
+async fn require_status(
+    pool: &SqlitePool,
+    user_id: i64,
+    now: DateTime<Utc>,
+    expected: WorkSessionStatus,
+) -> AppResult<WorkSessionRow> {
+    let local_date = today(now);
+    let session = open_session(pool, user_id, local_date)
+        .await?
+        .ok_or_else(|| AppError::Unprocessable("Keine offene Arbeitszeit".into()))?;
+    if session.status != expected.as_str() {
+        return Err(AppError::Unprocessable(format!(
+            "Arbeitszeit ist nicht im Zustand {}",
+            expected.as_str()
+        )));
+    }
+    Ok(session)
+}
+
+async fn open_session(
+    pool: &SqlitePool,
+    user_id: i64,
+    local_date: NaiveDate,
+) -> AppResult<Option<WorkSessionRow>> {
+    Ok(sqlx::query_as::<_, WorkSessionRow>(
+        "SELECT id, user_id, local_date, status, created_at FROM work_sessions
+         WHERE user_id = ? AND local_date = ? AND status != 'stopped'
+         ORDER BY id DESC",
+    )
+    .bind(user_id)
+    .bind(local_date.format("%Y-%m-%d").to_string())
+    .fetch_optional(pool)
+    .await?)
+}
+
+async fn sessions_on(
+    pool: &SqlitePool,
+    user_id: i64,
+    local_date: NaiveDate,
+) -> AppResult<Vec<WorkSessionRow>> {
+    Ok(sqlx::query_as::<_, WorkSessionRow>(
+        "SELECT id, user_id, local_date, status, created_at FROM work_sessions
+         WHERE user_id = ? AND local_date = ? ORDER BY id",
+    )
+    .bind(user_id)
+    .bind(local_date.format("%Y-%m-%d").to_string())
+    .fetch_all(pool)
+    .await?)
+}
+
+async fn events_for(pool: &SqlitePool, session_id: i64) -> AppResult<Vec<WorkEvent>> {
+    let rows = sqlx::query_as::<_, WorkEventRow>(
+        "SELECT id, work_session_id, kind, at FROM work_session_events WHERE work_session_id = ? ORDER BY id",
+    )
+    .bind(session_id)
+    .fetch_all(pool)
+    .await?;
+
+    let mut events = Vec::new();
+    for row in rows {
+        let kind = match row.kind.as_str() {
+            "started" => WorkEventKind::Started,
+            "paused" => WorkEventKind::Paused,
+            "resumed" => WorkEventKind::Resumed,
+            "stopped" => WorkEventKind::Stopped,
+            _ => return Err(AppError::Internal("Unbekanntes Work-Event".into())),
+        };
+        let at =
+            parse_rfc3339(&row.at).map_err(|_| AppError::Internal("Event-Zeit ungültig".into()))?;
+        events.push(WorkEvent { kind, at });
+    }
+    Ok(events)
+}
+
+async fn insert_event(
+    pool: &SqlitePool,
+    session_id: i64,
+    kind: WorkEventKind,
+    at: DateTime<Utc>,
+) -> AppResult<()> {
+    let kind = match kind {
+        WorkEventKind::Started => "started",
+        WorkEventKind::Paused => "paused",
+        WorkEventKind::Resumed => "resumed",
+        WorkEventKind::Stopped => "stopped",
+    };
+    sqlx::query("INSERT INTO work_session_events (work_session_id, kind, at) VALUES (?, ?, ?)")
+        .bind(session_id)
+        .bind(kind)
+        .bind(at.to_rfc3339())
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+async fn set_status(pool: &SqlitePool, id: i64, status: WorkSessionStatus) -> AppResult<()> {
+    sqlx::query("UPDATE work_sessions SET status = ? WHERE id = ?")
+        .bind(status.as_str())
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
