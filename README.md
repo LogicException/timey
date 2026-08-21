@@ -28,6 +28,7 @@ Login: Bootstrap-Admin aus den Env-Variablen.
 cd api && cargo test && cargo clippy --all-targets -- -D warnings
 cd web && npm test
 bash scripts/tests/build-images.test.sh
+bash scripts/tests/dockerfiles.test.sh
 ```
 
 ## Produktion (Traefik)
@@ -38,7 +39,7 @@ Images sind `linux/amd64` und liegen in `registry.logicexception.de`. Build vom 
 
 ```bash
 docker login registry.logicexception.de
-./scripts/build-images.sh v0.1.0
+./scripts/build-images.sh 0.1.0
 ```
 
 Auf dem Linux-Host (ohne `--build`, sonst wird lokal neu gebaut):

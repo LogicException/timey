@@ -1764,6 +1764,7 @@ dependencies = [
  "cookie",
  "hex",
  "http-body-util",
+ "libsqlite3-sys",
  "rand",
  "serde",
  "serde_json",
