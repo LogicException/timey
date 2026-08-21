@@ -28,7 +28,7 @@ assert_file_contains() {
   fi
 }
 
-assert_file_contains "$API_DOCKERFILE" "FROM --platform=\$BUILDPLATFORM" "api builder uses BUILDPLATFORM (native rustc, not QEMU)"
+assert_file_contains "$API_DOCKERFILE" "FROM --platform=\$BUILDPLATFORM rust:1.97-bookworm" "api builder rustc is new enough for Cargo.lock"
 assert_file_contains "$API_DOCKERFILE" "x86_64-unknown-linux-gnu" "api cross-compiles to x86_64-unknown-linux-gnu"
 assert_file_contains "$API_DOCKERFILE" "target/x86_64-unknown-linux-gnu/release/timey-api" "api copies the x86_64 release binary"
 assert_file_contains "$CARGO_TOML" 'features = ["bundled"]' "sqlite is bundled for cross-link"

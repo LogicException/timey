@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM rust:1.87-bookworm AS builder
+FROM --platform=$BUILDPLATFORM rust:1.97-bookworm AS builder
 WORKDIR /app
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
