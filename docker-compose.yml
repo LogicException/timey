@@ -25,6 +25,7 @@ services:
       - traefik.http.routers.timey-api.rule=Host(`${TIMEY_HOST:-timey.localhost}`) && PathPrefix(`/api`)
       - traefik.http.routers.timey-api.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}
       - traefik.http.routers.timey-api.tls=true
+      - traefik.http.routers.timey-api.tls.certresolver=${TRAEFIK_CERTRESOLVER:-letsencrypt}
       - traefik.http.routers.timey-api.priority=100
       - traefik.http.services.timey-api.loadbalancer.server.port=3000
 
@@ -43,6 +44,7 @@ services:
       - traefik.http.routers.timey-web.rule=Host(`${TIMEY_HOST:-timey.localhost}`)
       - traefik.http.routers.timey-web.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}
       - traefik.http.routers.timey-web.tls=true
+      - traefik.http.routers.timey-web.tls.certresolver=${TRAEFIK_CERTRESOLVER:-letsencrypt}
       - traefik.http.routers.timey-web.priority=10
       - traefik.http.services.timey-web.loadbalancer.server.port=80
 

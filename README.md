@@ -29,12 +29,13 @@ cd api && cargo test && cargo clippy --all-targets -- -D warnings
 cd web && npm test
 bash scripts/tests/build-images.test.sh
 bash scripts/tests/dockerfiles.test.sh
+bash scripts/tests/docker-compose.test.sh
 bash scripts/tests/publish-images.test.sh
 ```
 
 ## Produktion (Traefik)
 
-Externes Docker-Netz `proxy` (anpassen über `TRAEFIK_NETWORK`).
+Externes Docker-Netz `proxy` (anpassen über `TRAEFIK_NETWORK`). ACME läuft über `TRAEFIK_CERTRESOLVER` (Default `letsencrypt`, DNS-Challenge in der Traefik-Static-Config).
 
 Images sind `linux/amd64` und liegen in `ghcr.io/logicexception`. Ein Git-Tag-Push startet den Publish-Workflow.
 
