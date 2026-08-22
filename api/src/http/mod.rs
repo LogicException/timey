@@ -4,6 +4,7 @@ mod catalogs;
 mod entries;
 mod extractors;
 mod health;
+mod settings;
 mod work;
 
 use axum::Router;
@@ -19,6 +20,10 @@ pub fn router(state: AppState) -> Router {
         .route("/api/auth/login", post(auth::login))
         .route("/api/auth/logout", post(auth::logout))
         .route("/api/auth/me", get(auth::me))
+        .route(
+            "/api/settings",
+            get(settings::get_settings).patch(settings::patch_settings),
+        )
         .route(
             "/api/admin/users",
             get(admin::list_users).post(admin::create_user),

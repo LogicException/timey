@@ -5,6 +5,7 @@ use crate::error::{AppError, AppResult};
 use crate::models::{Role, UserRow};
 use crate::services::catalogs::seed_default_tasks;
 use crate::services::crypto::{hash_password, verify_password};
+use crate::services::settings;
 
 pub async fn count_users(pool: &SqlitePool) -> AppResult<i64> {
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
@@ -54,6 +55,7 @@ pub async fn create_user(
         Ok(done) => {
             let id = done.last_insert_rowid();
             seed_default_tasks(pool, id, now).await?;
+            settings::insert_defaults(pool, id).await?;
             get_user(pool, id).await
         }
         Err(sqlx::Error::Database(err)) if err.is_unique_violation() => {

@@ -472,3 +472,128 @@ async fn non_admin_cannot_create_projects() {
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 }
+
+#[tokio::test]
+async fn settings_default_after_login() {
+    let ctx = TestCtx::new().await;
+    let cookie = ctx.login("admin", "password1").await;
+    let (status, body, _) = ctx
+        .request("GET", "/api/settings", Some(&cookie), None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["work_start"], "07:30");
+    assert_eq!(body["work_end"], "16:15");
+}
+
+#[tokio::test]
+async fn settings_without_cookie_is_unauthorized() {
+    let ctx = TestCtx::new().await;
+    let (status, _, _) = ctx.request("GET", "/api/settings", None, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn settings_patch_roundtrip() {
+    let ctx = TestCtx::new().await;
+    let cookie = ctx.login("admin", "password1").await;
+    let (status, body, _) = ctx
+        .request(
+            "PATCH",
+            "/api/settings",
+            Some(&cookie),
+            Some(json!({
+                "work_start": "08:00",
+                "work_end": "17:00"
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["work_start"], "08:00");
+    assert_eq!(body["work_end"], "17:00");
+
+    let (status, body, _) = ctx
+        .request("GET", "/api/settings", Some(&cookie), None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["work_start"], "08:00");
+    assert_eq!(body["work_end"], "17:00");
+}
+
+#[tokio::test]
+async fn settings_patch_rejects_invalid_range() {
+    let ctx = TestCtx::new().await;
+    let cookie = ctx.login("admin", "password1").await;
+    let (status, body, _) = ctx
+        .request(
+            "PATCH",
+            "/api/settings",
+            Some(&cookie),
+            Some(json!({
+                "work_start": "16:15",
+                "work_end": "07:30"
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["error"], "Beginn muss vor dem Ende liegen");
+}
+
+#[tokio::test]
+async fn settings_patch_rejects_invalid_format() {
+    let ctx = TestCtx::new().await;
+    let cookie = ctx.login("admin", "password1").await;
+    let (status, body, _) = ctx
+        .request(
+            "PATCH",
+            "/api/settings",
+            Some(&cookie),
+            Some(json!({
+                "work_start": "7:30",
+                "work_end": "16:15"
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(
+        body["error"],
+        "Arbeitszeit muss im Format HH:MM angegeben werden"
+    );
+}
+
+#[tokio::test]
+async fn settings_are_isolated_per_user() {
+    let ctx = TestCtx::new().await;
+    let admin = ctx.login("admin", "password1").await;
+    let (status, _, _) = ctx
+        .request(
+            "POST",
+            "/api/admin/users",
+            Some(&admin),
+            Some(json!({
+                "username": "enrico",
+                "password": "password1",
+                "role": "user"
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, _, _) = ctx
+        .request(
+            "PATCH",
+            "/api/settings",
+            Some(&admin),
+            Some(json!({
+                "work_start": "09:00",
+                "work_end": "18:00"
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let user = ctx.login("enrico", "password1").await;
+    let (status, body, _) = ctx.request("GET", "/api/settings", Some(&user), None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["work_start"], "07:30");
+    assert_eq!(body["work_end"], "16:15");
+}

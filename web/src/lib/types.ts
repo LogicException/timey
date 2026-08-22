@@ -6,6 +6,11 @@ export type User = {
 	role: Role;
 };
 
+export type UserSettings = {
+	work_start: string;
+	work_end: string;
+};
+
 export type AuthConfig = {
 	local: boolean;
 	oidc: boolean;

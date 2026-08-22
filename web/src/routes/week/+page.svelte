@@ -15,7 +15,8 @@
 		startOfWeek
 	} from '$lib/dates';
 	import { applyBerlinTimes, entryToEditState, savePayload } from '$lib/week-entry';
-	import type { Entry, NamedItem } from '$lib/types';
+	import type { Entry, NamedItem, UserSettings } from '$lib/types';
+	import { DEFAULT_WORK_END, DEFAULT_WORK_START, weekSlotTimes } from '$lib/working-hours';
 
 	let el: HTMLDivElement;
 	let calendar: Calendar | undefined;
@@ -99,54 +100,75 @@
 	}
 
 	onMount(() => {
-		calendar = new Calendar(el, {
-			plugins: [timeGridPlugin, interactionPlugin],
-			initialView: 'timeGridWeek',
-			locale: deLocale,
-			firstDay: 1,
-			allDaySlot: false,
-			slotMinTime: '06:00:00',
-			slotMaxTime: '22:00:00',
-			slotDuration: '00:15:00',
-			snapDuration: '00:15:00',
-			selectable: true,
-			selectMirror: true,
-			nowIndicator: true,
-			height: 'auto',
-			headerToolbar: { left: 'prev,next today', center: 'title', right: '' },
-			select: (info) => {
-				startIso = info.start.toISOString();
-				endIso = info.end.toISOString();
-				taskId = tasks[0]?.id ?? null;
-				projectId = null;
-				aufgabeId = null;
-				editingId = null;
-				syncTimeFields();
-				error = '';
-				open = true;
-				calendar?.unselect();
-			},
-			eventDidMount: (info) => {
-				info.el.addEventListener('dblclick', () => {
-					openEdit(Number(info.event.id));
-				});
-			},
-			datesSet: () => {
-				void refreshEvents();
+		let destroyed = false;
+		void (async () => {
+			let workStart = DEFAULT_WORK_START;
+			let workEnd = DEFAULT_WORK_END;
+			try {
+				const settings = await api<UserSettings>('/api/settings');
+				workStart = settings.work_start;
+				workEnd = settings.work_end;
+			} catch {
+				// keep defaults
 			}
-		});
-		calendar.render();
-		void Promise.all([
-			api<NamedItem[]>('/api/tasks'),
-			api<NamedItem[]>('/api/projects'),
-			api<NamedItem[]>('/api/aufgaben')
-		]).then(([t, p, a]) => {
-			tasks = t;
-			projects = p;
-			aufgaben = a;
-			taskId = t[0]?.id ?? null;
-		});
-		return () => calendar?.destroy();
+			if (destroyed) return;
+			const slots = weekSlotTimes(workStart, workEnd);
+			calendar = new Calendar(el, {
+				plugins: [timeGridPlugin, interactionPlugin],
+				initialView: 'timeGridWeek',
+				locale: deLocale,
+				firstDay: 1,
+				allDaySlot: false,
+				slotMinTime: slots.min,
+				slotMaxTime: slots.max,
+				slotDuration: '00:15:00',
+				snapDuration: '00:15:00',
+				selectable: true,
+				selectMirror: true,
+				nowIndicator: true,
+				height: 'auto',
+				headerToolbar: { left: 'prev,next today', center: 'title', right: '' },
+				select: (info) => {
+					startIso = info.start.toISOString();
+					endIso = info.end.toISOString();
+					taskId = tasks[0]?.id ?? null;
+					projectId = null;
+					aufgabeId = null;
+					editingId = null;
+					syncTimeFields();
+					error = '';
+					open = true;
+					calendar?.unselect();
+				},
+				eventDidMount: (info) => {
+					info.el.addEventListener('dblclick', () => {
+						openEdit(Number(info.event.id));
+					});
+				},
+				datesSet: () => {
+					void refreshEvents();
+				}
+			});
+			if (destroyed) {
+				calendar.destroy();
+				return;
+			}
+			calendar.render();
+			void Promise.all([
+				api<NamedItem[]>('/api/tasks'),
+				api<NamedItem[]>('/api/projects'),
+				api<NamedItem[]>('/api/aufgaben')
+			]).then(([t, p, a]) => {
+				tasks = t;
+				projects = p;
+				aufgaben = a;
+				taskId = t[0]?.id ?? null;
+			});
+		})();
+		return () => {
+			destroyed = true;
+			calendar?.destroy();
+		};
 	});
 
 	async function saveEntry() {

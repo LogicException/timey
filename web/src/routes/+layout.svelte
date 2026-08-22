@@ -80,6 +80,7 @@
 				<a href="/report" class="hover:text-ink">Auswertung</a>
 				<a href="/projects" class="hover:text-ink">Projekte</a>
 				<a href="/settings" class="hover:text-ink">Tasks</a>
+				<a href="/preferences" class="hover:text-ink">Einstellungen</a>
 				{#if user.role === 'admin'}
 					<a href="/admin/users" class="hover:text-ink">Benutzer</a>
 				{/if}

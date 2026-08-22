@@ -2,6 +2,7 @@ pub mod midnight;
 pub mod overlap;
 pub mod same_day;
 pub mod work_duration;
+pub mod working_hours;
 
 pub use midnight::{close_timestamp, needs_midnight_close};
 pub use overlap::{
