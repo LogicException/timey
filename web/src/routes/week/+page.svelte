@@ -203,8 +203,8 @@
 				<TimeField bind:hours={toH} bind:minutes={toM} label="Bis" />
 			</div>
 			<NamedSelect label="Task" items={tasks} bind:value={taskId} />
-			<NamedSelect label="Projekt" items={projects} bind:value={projectId} optional />
 			<NamedSelect label="Aufgabe" items={aufgaben} bind:value={aufgabeId} optional />
+			<NamedSelect label="Projekt" items={projects} bind:value={projectId} optional />
 			{#if error}
 				<p class="text-sm text-stop">{error}</p>
 			{/if}

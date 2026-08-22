@@ -18,3 +18,9 @@ export function durationBetween(startIso: string, endIso: string | null): number
 	if (!endIso) return 0;
 	return Math.max(0, (Date.parse(endIso) - Date.parse(startIso)) / 1000);
 }
+
+export function totalDurationSeconds(
+	entries: ReadonlyArray<{ start_at: string; end_at: string | null }>
+): number {
+	return entries.reduce((sum, entry) => sum + durationBetween(entry.start_at, entry.end_at), 0);
+}
