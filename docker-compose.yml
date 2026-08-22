@@ -1,5 +1,6 @@
 services:
   api:
+    image: ${REGISTRY:-registry.logicexception.de}/timey-api:${TIMEY_TAG:?set TIMEY_TAG}
     build:
       context: ./api
     restart: unless-stopped
@@ -28,6 +29,7 @@ services:
       - traefik.http.services.timey-api.loadbalancer.server.port=3000
 
   web:
+    image: ${REGISTRY:-registry.logicexception.de}/timey-web:${TIMEY_TAG:?set TIMEY_TAG}
     build:
       context: ./web
     restart: unless-stopped
