@@ -3,7 +3,7 @@ use axum::extract::{Path, Query, State};
 use serde::{Deserialize, Serialize};
 
 use crate::error::AppResult;
-use crate::http::extractors::{require_admin, CurrentUser};
+use crate::http::extractors::{CurrentUser, require_admin};
 use crate::models::{NamedRow, ProjectRow};
 use crate::services::catalogs::{self, UserItemTable};
 use crate::state::AppState;

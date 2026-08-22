@@ -8,7 +8,10 @@ use timey_api::services::users;
 async fn default_task_seed_fills_missing_names_without_duplicates() {
     let pool = db::connect("sqlite::memory:").await.expect("db");
     db::migrate(&pool).await.expect("migrate");
-    let now = Utc.with_ymd_and_hms(2026, 8, 21, 10, 0, 0).single().unwrap();
+    let now = Utc
+        .with_ymd_and_hms(2026, 8, 21, 10, 0, 0)
+        .single()
+        .unwrap();
     let user = users::create_user(&pool, "admin", "password1", Role::Admin, now)
         .await
         .expect("user");

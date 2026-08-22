@@ -626,13 +626,7 @@ mod tests {
                 None,
                 None,
             ),
-            entry(
-                "2026-08-21T13:00:00Z",
-                None,
-                Some("läuft"),
-                None,
-                None,
-            ),
+            entry("2026-08-21T13:00:00Z", None, Some("läuft"), None, None),
         ])
         .expect("csv");
         assert!(
