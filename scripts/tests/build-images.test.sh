@@ -42,8 +42,8 @@ assert_contains() {
 source "$LIB"
 
 assert_eq "$PLATFORM" "linux/amd64" "platform is linux/amd64"
-assert_eq "$(image_ref api v1.2.3)" "registry.logicexception.de/timey-api:v1.2.3" "default api image ref"
-assert_eq "$(image_ref web v1.2.3)" "registry.logicexception.de/timey-web:v1.2.3" "default web image ref"
+assert_eq "$(image_ref api v1.2.3)" "ghcr.io/logicexception/timey-api:v1.2.3" "default api image ref"
+assert_eq "$(image_ref web v1.2.3)" "ghcr.io/logicexception/timey-web:v1.2.3" "default web image ref"
 
 got="$(REGISTRY=example.internal image_ref web v9)"
 assert_eq "$got" "example.internal/timey-web:v9" "registry override"
