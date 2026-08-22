@@ -10,7 +10,7 @@
 		formatBerlinTime,
 		isoToBerlinHoursMinutes
 	} from '$lib/dates';
-	import { durationBetween, formatHm } from '$lib/format';
+	import { durationBetween, formatHm, totalDurationSeconds } from '$lib/format';
 	import type { Entry, NamedItem } from '$lib/types';
 
 	let day = $state(formatBerlinDate(new Date()));
@@ -125,12 +125,14 @@
 
 	<div class="panel space-y-3 rounded-xl p-4">
 		<h2 class="text-lg">{editing == null ? 'Neuer Eintrag' : 'Eintrag bearbeiten'}</h2>
-		<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+		<div class="grid gap-3 sm:grid-cols-2">
 			<TimeField bind:hours={fromH} bind:minutes={fromM} label="Von" />
 			<TimeField bind:hours={toH} bind:minutes={toM} label="Bis" />
+		</div>
+		<div class="grid gap-3 sm:grid-cols-3">
 			<NamedSelect label="Task" items={tasks} bind:value={taskId} />
-			<NamedSelect label="Projekt" items={projects} bind:value={projectId} optional />
 			<NamedSelect label="Aufgabe" items={aufgaben} bind:value={aufgabeId} optional />
+			<NamedSelect label="Projekt" items={projects} bind:value={projectId} optional />
 		</div>
 		<div class="flex gap-2">
 			<button class="rounded-md bg-amber px-4 py-2 text-sm font-semibold text-bg" onclick={save}
@@ -180,6 +182,13 @@
 					</tr>
 				{/each}
 			</tbody>
+			<tfoot>
+				<tr class="border-t border-line bg-panel-2">
+					<td class="px-4 py-2 text-xs uppercase tracking-wider text-muted" colspan="2">Summe</td>
+					<td class="clock-face px-4 py-2">{formatHm(totalDurationSeconds(entries))}</td>
+					<td colspan="4"></td>
+				</tr>
+			</tfoot>
 		</table>
 	</div>
 </div>

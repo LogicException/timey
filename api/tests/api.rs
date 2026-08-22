@@ -410,6 +410,7 @@ async fn csv_export_contains_header() {
     assert_eq!(status, StatusCode::OK);
     let raw = body["raw"].as_str().unwrap_or_default();
     assert!(raw.contains("Start,Ende,Dauer,Task,Projekt,Aufgabe"));
+    assert!(raw.contains("Summe,,0:00,,,"));
 }
 
 #[tokio::test]

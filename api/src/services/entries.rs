@@ -469,11 +469,15 @@ fn entry_select_sql(where_clause: &str) -> String {
     )
 }
 
-pub fn format_duration_label(start: DateTime<Utc>, end: DateTime<Utc>) -> String {
-    let seconds = (end - start).num_seconds().max(0);
+pub fn format_hm(total_seconds: i64) -> String {
+    let seconds = total_seconds.max(0);
     let hours = seconds / 3600;
     let minutes = (seconds % 3600) / 60;
     format!("{hours}:{minutes:02}")
+}
+
+pub fn format_duration_label(start: DateTime<Utc>, end: DateTime<Utc>) -> String {
+    format_hm((end - start).num_seconds())
 }
 
 pub fn csv_escape(field: &str) -> String {
@@ -487,6 +491,7 @@ pub fn csv_escape(field: &str) -> String {
 pub fn entries_to_csv(rows: &[EntryRow]) -> AppResult<String> {
     let mut out = String::from('\u{feff}');
     out.push_str("Start,Ende,Dauer,Task,Projekt,Aufgabe\n");
+    let mut total_seconds: i64 = 0;
     for row in rows {
         let start = parse_rfc3339(&row.start_at)
             .map_err(|_| AppError::Internal("Startzeit ungültig".into()))?;
@@ -496,6 +501,9 @@ pub fn entries_to_csv(rows: &[EntryRow]) -> AppResult<String> {
             .map(parse_rfc3339)
             .transpose()
             .map_err(|_| AppError::Internal("Endzeit ungültig".into()))?;
+        if let Some(end) = end {
+            total_seconds += (end - start).num_seconds().max(0);
+        }
         let duration = end
             .map(|end| format_duration_label(start, end))
             .unwrap_or_default();
@@ -520,6 +528,11 @@ pub fn entries_to_csv(rows: &[EntryRow]) -> AppResult<String> {
             csv_escape(row.aufgabe_name.as_deref().unwrap_or("")),
         ));
     }
+    out.push_str(&format!(
+        "{},,{},,,\n",
+        csv_escape("Summe"),
+        csv_escape(&format_hm(total_seconds)),
+    ));
     Ok(out)
 }
 
@@ -544,5 +557,87 @@ mod tests {
         let start = Utc::now();
         let end = start + Duration::minutes(90);
         assert_eq!(format_duration_label(start, end), "1:30");
+    }
+
+    fn entry(
+        start_at: &str,
+        end_at: Option<&str>,
+        task_name: Option<&str>,
+        project_name: Option<&str>,
+        aufgabe_name: Option<&str>,
+    ) -> EntryRow {
+        EntryRow {
+            id: 1,
+            user_id: 1,
+            task_id: None,
+            project_id: None,
+            aufgabe_id: None,
+            start_at: start_at.to_string(),
+            end_at: end_at.map(str::to_string),
+            status: "complete".into(),
+            created_at: start_at.to_string(),
+            task_name: task_name.map(str::to_string),
+            project_name: project_name.map(str::to_string),
+            aufgabe_name: aufgabe_name.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn csv_empty_list_includes_zero_sum_row() {
+        let csv = entries_to_csv(&[]).expect("csv");
+        assert!(
+            csv.ends_with("Summe,,0:00,,,\n"),
+            "expected sum footer, got {csv:?}"
+        );
+    }
+
+    #[test]
+    fn csv_sums_completed_entries() {
+        let csv = entries_to_csv(&[
+            entry(
+                "2026-08-21T12:00:00Z",
+                Some("2026-08-21T12:30:00Z"),
+                Some("Meeting"),
+                Some("Elba"),
+                None,
+            ),
+            entry(
+                "2026-08-21T09:45:00Z",
+                Some("2026-08-21T11:00:00Z"),
+                Some("E-Mail"),
+                Some("Efa"),
+                Some("beantworten"),
+            ),
+        ])
+        .expect("csv");
+        assert!(
+            csv.contains("Summe,,1:45,,,\n"),
+            "expected 1:45 sum, got {csv:?}"
+        );
+    }
+
+    #[test]
+    fn csv_running_entry_does_not_increase_sum() {
+        let csv = entries_to_csv(&[
+            entry(
+                "2026-08-21T12:00:00Z",
+                Some("2026-08-21T12:30:00Z"),
+                Some("Meeting"),
+                None,
+                None,
+            ),
+            entry(
+                "2026-08-21T13:00:00Z",
+                None,
+                Some("läuft"),
+                None,
+                None,
+            ),
+        ])
+        .expect("csv");
+        assert!(
+            csv.contains("Summe,,0:30,,,\n"),
+            "expected 0:30 sum, got {csv:?}"
+        );
     }
 }

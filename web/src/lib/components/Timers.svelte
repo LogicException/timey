@@ -151,8 +151,8 @@
 			<p class="mb-2 text-xs uppercase tracking-[0.18em] text-muted">Eintrag läuft — Task, Projekt und Aufgabe angeben</p>
 			<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
 				<NamedSelect label="Task" items={tasks} bind:value={taskId} />
-				<NamedSelect label="Projekt" items={projects} bind:value={projectId} optional />
 				<NamedSelect label="Aufgabe" items={aufgaben} bind:value={aufgabeId} optional />
+				<NamedSelect label="Projekt" items={projects} bind:value={projectId} optional />
 				<div class="flex items-end gap-2">
 					<button class="px-3 py-2 text-sm text-muted" onclick={cancelTimer}>Abbrechen</button>
 					<button class="rounded-md bg-stop px-4 py-2 text-sm" onclick={confirmStop}>Stop</button>

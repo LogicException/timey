@@ -9,7 +9,7 @@
 		rangeForPreset,
 		type RangePreset
 	} from '$lib/dates';
-	import { durationBetween, formatHm } from '$lib/format';
+	import { durationBetween, formatHm, totalDurationSeconds } from '$lib/format';
 	import type { Entry, NamedItem } from '$lib/types';
 
 	const today = formatBerlinDate(new Date());
@@ -136,6 +136,13 @@
 					</tr>
 				{/each}
 			</tbody>
+			<tfoot>
+				<tr class="border-t border-line bg-panel-2">
+					<td class="px-4 py-2 text-xs uppercase tracking-wider text-muted" colspan="2">Summe</td>
+					<td class="clock-face px-4 py-2">{formatHm(totalDurationSeconds(entries))}</td>
+					<td colspan="3"></td>
+				</tr>
+			</tfoot>
 		</table>
 	</div>
 </div>
