@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PLATFORM="linux/amd64"
-DEFAULT_REGISTRY="registry.logicexception.de"
+DEFAULT_REGISTRY="ghcr.io/logicexception"
 
 die() {
   printf '%s\n' "$1" >&2
