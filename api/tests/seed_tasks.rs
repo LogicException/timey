@@ -1,7 +1,7 @@
 use chrono::{TimeZone, Utc};
 use timey_api::db;
 use timey_api::models::Role;
-use timey_api::services::catalogs::{self, UserItemTable};
+use timey_api::services::catalogs;
 use timey_api::services::users;
 
 #[tokio::test]
@@ -29,7 +29,7 @@ async fn default_task_seed_fills_missing_names_without_duplicates() {
         .await
         .expect("second seed");
 
-    let tasks = catalogs::list_user_items(&pool, UserItemTable::Task, user.id, true)
+    let tasks = catalogs::list_tasks(&pool, user.id, true)
         .await
         .expect("list");
     let names: Vec<_> = tasks.iter().map(|row| row.name.as_str()).collect();

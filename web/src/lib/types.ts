@@ -27,10 +27,8 @@ export type Entry = {
 	id: number;
 	task_id: number | null;
 	project_id: number | null;
-	aufgabe_id: number | null;
 	task_name: string | null;
 	project_name: string | null;
-	aufgabe_name: string | null;
 	start_at: string;
 	end_at: string | null;
 	status: 'running' | 'complete' | 'needs_task';

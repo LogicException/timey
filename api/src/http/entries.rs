@@ -19,15 +19,12 @@ pub struct ListParams {
     task_ids: String,
     #[serde(default)]
     project_ids: String,
-    #[serde(default)]
-    aufgabe_ids: String,
 }
 
 #[derive(Deserialize)]
 pub struct EntryBody {
     task_id: Option<i64>,
     project_id: Option<i64>,
-    aufgabe_id: Option<i64>,
     start_at: DateTime<Utc>,
     end_at: Option<DateTime<Utc>>,
 }
@@ -36,7 +33,6 @@ pub struct EntryBody {
 pub struct StopBody {
     task_id: i64,
     project_id: Option<i64>,
-    aufgabe_id: Option<i64>,
 }
 
 #[derive(Serialize)]
@@ -44,10 +40,8 @@ pub struct EntryView {
     id: i64,
     task_id: Option<i64>,
     project_id: Option<i64>,
-    aufgabe_id: Option<i64>,
     task_name: Option<String>,
     project_name: Option<String>,
-    aufgabe_name: Option<String>,
     start_at: String,
     end_at: Option<String>,
     status: String,
@@ -59,10 +53,8 @@ impl From<EntryRow> for EntryView {
             id: row.id,
             task_id: row.task_id,
             project_id: row.project_id,
-            aufgabe_id: row.aufgabe_id,
             task_name: row.task_name,
             project_name: row.project_name,
-            aufgabe_name: row.aufgabe_name,
             start_at: row.start_at,
             end_at: row.end_at,
             status: row.status,
@@ -113,7 +105,6 @@ pub async fn create_entry(
         NewEntry {
             task_id: body.task_id,
             project_id: body.project_id,
-            aufgabe_id: body.aufgabe_id,
             start_at: body.start_at,
             end_at: body.end_at,
         },
@@ -136,7 +127,6 @@ pub async fn update_entry(
         NewEntry {
             task_id: body.task_id,
             project_id: body.project_id,
-            aufgabe_id: body.aufgabe_id,
             start_at: body.start_at,
             end_at: body.end_at,
         },
@@ -184,7 +174,6 @@ pub async fn stop_timer(
         user.id,
         body.task_id,
         body.project_id,
-        body.aufgabe_id,
         Utc::now(),
     )
     .await?;
@@ -195,7 +184,6 @@ fn parse_filters(params: &ListParams) -> EntryFilters {
     EntryFilters {
         task_ids: parse_ids(&params.task_ids),
         project_ids: parse_ids(&params.project_ids),
-        aufgabe_ids: parse_ids(&params.aufgabe_ids),
     }
 }
 

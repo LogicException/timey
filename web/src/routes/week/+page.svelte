@@ -23,7 +23,6 @@
 	let entriesById = new Map<number, Entry>();
 	let tasks = $state<NamedItem[]>([]);
 	let projects = $state<NamedItem[]>([]);
-	let aufgaben = $state<NamedItem[]>([]);
 	let error = $state('');
 	let open = $state(false);
 	let editingId = $state<number | null>(null);
@@ -35,16 +34,13 @@
 	let toM = $state(0);
 	let taskId = $state<number | null>(null);
 	let projectId = $state<number | null>(null);
-	let aufgabeId = $state<number | null>(null);
 
 	async function loadRange(from: string, to: string): Promise<Entry[]> {
 		return api(`/api/entries?from=${from}&to=${to}`);
 	}
 
 	function eventTitle(entry: Entry): string {
-		return [entry.task_name ?? 'ohne Task', entry.project_name, entry.aufgabe_name]
-			.filter(Boolean)
-			.join(' · ');
+		return [entry.task_name ?? 'ohne Task', entry.project_name].filter(Boolean).join(' · ');
 	}
 
 	function syncTimeFields() {
@@ -71,7 +67,6 @@
 		endIso = state.endIso;
 		taskId = state.taskId;
 		projectId = state.projectId;
-		aufgabeId = state.aufgabeId;
 		syncTimeFields();
 		editingId = id;
 		error = '';
@@ -133,7 +128,6 @@
 					endIso = info.end.toISOString();
 					taskId = tasks[0]?.id ?? null;
 					projectId = null;
-					aufgabeId = null;
 					editingId = null;
 					syncTimeFields();
 					error = '';
@@ -156,12 +150,10 @@
 			calendar.render();
 			void Promise.all([
 				api<NamedItem[]>('/api/tasks'),
-				api<NamedItem[]>('/api/projects'),
-				api<NamedItem[]>('/api/aufgaben')
-			]).then(([t, p, a]) => {
+				api<NamedItem[]>('/api/projects')
+			]).then(([t, p]) => {
 				tasks = t;
 				projects = p;
-				aufgaben = a;
 				taskId = t[0]?.id ?? null;
 			});
 		})();
@@ -183,8 +175,7 @@
 			startIso,
 			endIso,
 			taskId,
-			projectId,
-			aufgabeId
+			projectId
 		});
 		try {
 			if (editingId == null) {
@@ -217,7 +208,7 @@
 
 {#if open}
 	<div class="fixed inset-0 z-30 flex items-center justify-center bg-black/50 p-4">
-		<div class="panel w-full max-w-md space-y-3 rounded-xl p-5">
+		<div class="panel w-full max-w-xl space-y-3 rounded-xl p-5">
 			<h2 class="text-lg">{editingId == null ? 'Zeitspanne erfassen' : 'Eintrag bearbeiten'}</h2>
 			<p class="clock-face text-sm text-amber">{spanLabel()}</p>
 			<div class="grid gap-3 sm:grid-cols-2">
@@ -225,7 +216,6 @@
 				<TimeField bind:hours={toH} bind:minutes={toM} label="Bis" />
 			</div>
 			<NamedSelect label="Task" items={tasks} bind:value={taskId} />
-			<NamedSelect label="Aufgabe" items={aufgaben} bind:value={aufgabeId} optional />
 			<NamedSelect label="Projekt" items={projects} bind:value={projectId} optional />
 			{#if error}
 				<p class="text-sm text-stop">{error}</p>

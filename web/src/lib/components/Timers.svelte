@@ -9,21 +9,18 @@
 		timer,
 		tasks,
 		projects,
-		aufgaben,
 		onRefresh
 	}: {
 		work: WorkSnapshot | null;
 		timer: Entry | null;
 		tasks: NamedItem[];
 		projects: NamedItem[];
-		aufgaben: NamedItem[];
 		onRefresh: () => Promise<void>;
 	} = $props();
 
 	let displaySeconds = $state(0);
 	let taskId = $state<number | null>(null);
 	let projectId = $state<number | null>(null);
-	let aufgabeId = $state<number | null>(null);
 	let error = $state('');
 	let boundTimerId = $state<number | null>(null);
 
@@ -43,7 +40,6 @@
 			boundTimerId = timer.id;
 			taskId = timer.task_id;
 			projectId = timer.project_id;
-			aufgabeId = timer.aufgabe_id;
 		}
 		if (!timer) {
 			boundTimerId = null;
@@ -81,8 +77,7 @@
 				method: 'POST',
 				body: JSON.stringify({
 					task_id: taskId,
-					project_id: projectId,
-					aufgabe_id: aufgabeId
+					project_id: projectId
 				})
 			});
 			await onRefresh();
@@ -98,7 +93,6 @@
 			await api(`/api/entries/${timer.id}`, { method: 'DELETE' });
 			taskId = null;
 			projectId = null;
-			aufgabeId = null;
 			await onRefresh();
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Fehler';
@@ -148,10 +142,9 @@
 	</div>
 	{#if timer}
 		<div class="border-t border-line pt-3">
-			<p class="mb-2 text-xs uppercase tracking-[0.18em] text-muted">Eintrag läuft — Task, Projekt und Aufgabe angeben</p>
-			<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+			<p class="mb-2 text-xs uppercase tracking-[0.18em] text-muted">Eintrag läuft — Task und Projekt angeben</p>
+			<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
 				<NamedSelect label="Task" items={tasks} bind:value={taskId} />
-				<NamedSelect label="Aufgabe" items={aufgaben} bind:value={aufgabeId} optional />
 				<NamedSelect label="Projekt" items={projects} bind:value={projectId} optional />
 				<div class="flex items-end gap-2">
 					<button class="px-3 py-2 text-sm text-muted" onclick={cancelTimer}>Abbrechen</button>

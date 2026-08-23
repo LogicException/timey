@@ -6,13 +6,12 @@ use crate::domain::{
 };
 use crate::error::{AppError, AppResult};
 use crate::models::{EntryRow, EntryStatus, parse_rfc3339};
-use crate::services::catalogs::{UserItemTable, get_project, get_user_item};
+use crate::services::catalogs::{get_project, get_task};
 
 #[derive(Debug, Clone)]
 pub struct NewEntry {
     pub task_id: Option<i64>,
     pub project_id: Option<i64>,
-    pub aufgabe_id: Option<i64>,
     pub start_at: DateTime<Utc>,
     pub end_at: Option<DateTime<Utc>>,
 }
@@ -21,7 +20,6 @@ pub struct NewEntry {
 pub struct EntryFilters {
     pub task_ids: Vec<i64>,
     pub project_ids: Vec<i64>,
-    pub aufgabe_ids: Vec<i64>,
 }
 
 pub async fn list_entries(
@@ -45,12 +43,11 @@ pub async fn list_entries(
         .ok_or_else(|| AppError::Internal("Ende des Tages ungültig".into()))?;
 
     let rows = sqlx::query_as::<_, EntryRow>(
-        "SELECT e.id, e.user_id, e.task_id, e.project_id, e.aufgabe_id, e.start_at, e.end_at, e.status, e.created_at,
-                t.name AS task_name, p.name AS project_name, a.name AS aufgabe_name
+        "SELECT e.id, e.user_id, e.task_id, e.project_id, e.start_at, e.end_at, e.status, e.created_at,
+                t.name AS task_name, p.name AS project_name
          FROM entries e
          LEFT JOIN tasks t ON t.id = e.task_id
          LEFT JOIN projects p ON p.id = e.project_id
-         LEFT JOIN aufgaben a ON a.id = e.aufgabe_id
          WHERE e.user_id = ? AND e.start_at >= ? AND e.start_at < ?
          ORDER BY e.start_at DESC",
     )
@@ -78,13 +75,6 @@ fn passes_filters(row: &EntryRow, filters: &EntryFilters) -> bool {
     {
         return false;
     }
-    if !filters.aufgabe_ids.is_empty()
-        && !row
-            .aufgabe_id
-            .is_some_and(|id| filters.aufgabe_ids.contains(&id))
-    {
-        return false;
-    }
     true
 }
 
@@ -107,14 +97,7 @@ pub async fn create_entry(
         ensure_no_needs_task(pool, user_id).await?;
     }
 
-    validate_refs(
-        pool,
-        user_id,
-        input.task_id,
-        input.project_id,
-        input.aufgabe_id,
-    )
-    .await?;
+    validate_refs(pool, user_id, input.task_id, input.project_id).await?;
     ensure_same_day(input.start_at, end_at.unwrap_or(input.start_at))?;
     ensure_no_overlap(pool, user_id, None, input.start_at, end_at, now).await?;
 
@@ -150,24 +133,16 @@ pub async fn update_entry(
         }
     }
 
-    validate_refs(
-        pool,
-        user_id,
-        input.task_id,
-        input.project_id,
-        input.aufgabe_id,
-    )
-    .await?;
+    validate_refs(pool, user_id, input.task_id, input.project_id).await?;
     ensure_same_day(input.start_at, end_at.unwrap_or(input.start_at))?;
     ensure_no_overlap(pool, user_id, Some(id), input.start_at, end_at, now).await?;
 
     sqlx::query(
-        "UPDATE entries SET task_id = ?, project_id = ?, aufgabe_id = ?, start_at = ?, end_at = ?, status = ?
+        "UPDATE entries SET task_id = ?, project_id = ?, start_at = ?, end_at = ?, status = ?
          WHERE id = ? AND user_id = ?",
     )
     .bind(input.task_id)
     .bind(input.project_id)
-    .bind(input.aufgabe_id)
     .bind(input.start_at.to_rfc3339())
     .bind(end_at.map(|value| value.to_rfc3339()))
     .bind(status.as_str())
@@ -202,7 +177,6 @@ pub async fn start_timer(
         NewEntry {
             task_id: None,
             project_id: None,
-            aufgabe_id: None,
             start_at: now,
             end_at: None,
         },
@@ -216,7 +190,6 @@ pub async fn stop_timer(
     user_id: i64,
     task_id: i64,
     project_id: Option<i64>,
-    aufgabe_id: Option<i64>,
     now: DateTime<Utc>,
 ) -> AppResult<EntryRow> {
     let running = running_entry(pool, user_id)
@@ -231,7 +204,6 @@ pub async fn stop_timer(
         NewEntry {
             task_id: Some(task_id),
             project_id,
-            aufgabe_id,
             start_at: start,
             end_at: Some(now),
         },
@@ -264,7 +236,6 @@ pub async fn assign_task_to_needs_task(
     id: i64,
     task_id: i64,
     project_id: Option<i64>,
-    aufgabe_id: Option<i64>,
     now: DateTime<Utc>,
 ) -> AppResult<EntryRow> {
     let existing = get_owned_entry(pool, user_id, id).await?;
@@ -287,7 +258,6 @@ pub async fn assign_task_to_needs_task(
         NewEntry {
             task_id: Some(task_id),
             project_id,
-            aufgabe_id,
             start_at: start,
             end_at: Some(end),
         },
@@ -305,13 +275,12 @@ async fn insert_entry(
     now: DateTime<Utc>,
 ) -> AppResult<EntryRow> {
     let done = sqlx::query(
-        "INSERT INTO entries (user_id, task_id, project_id, aufgabe_id, start_at, end_at, status, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO entries (user_id, task_id, project_id, start_at, end_at, status, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(user_id)
     .bind(input.task_id)
     .bind(input.project_id)
-    .bind(input.aufgabe_id)
     .bind(input.start_at.to_rfc3339())
     .bind(end_at.map(|value| value.to_rfc3339()))
     .bind(status.as_str())
@@ -354,10 +323,9 @@ async fn validate_refs(
     user_id: i64,
     task_id: Option<i64>,
     project_id: Option<i64>,
-    aufgabe_id: Option<i64>,
 ) -> AppResult<()> {
     if let Some(task_id) = task_id {
-        let task = get_user_item(pool, UserItemTable::Task, user_id, task_id).await?;
+        let task = get_task(pool, user_id, task_id).await?;
         if task.archived {
             return Err(AppError::Unprocessable("Task ist archiviert".into()));
         }
@@ -366,12 +334,6 @@ async fn validate_refs(
         let project = get_project(pool, project_id).await?;
         if project.archived {
             return Err(AppError::Unprocessable("Projekt ist archiviert".into()));
-        }
-    }
-    if let Some(aufgabe_id) = aufgabe_id {
-        let aufgabe = get_user_item(pool, UserItemTable::Aufgabe, user_id, aufgabe_id).await?;
-        if aufgabe.archived {
-            return Err(AppError::Unprocessable("Aufgabe ist archiviert".into()));
         }
     }
     Ok(())
@@ -459,12 +421,11 @@ async fn ensure_no_overlap(
 
 fn entry_select_sql(where_clause: &str) -> String {
     format!(
-        "SELECT e.id, e.user_id, e.task_id, e.project_id, e.aufgabe_id, e.start_at, e.end_at, e.status, e.created_at,
-                t.name AS task_name, p.name AS project_name, a.name AS aufgabe_name
+        "SELECT e.id, e.user_id, e.task_id, e.project_id, e.start_at, e.end_at, e.status, e.created_at,
+                t.name AS task_name, p.name AS project_name
          FROM entries e
          LEFT JOIN tasks t ON t.id = e.task_id
          LEFT JOIN projects p ON p.id = e.project_id
-         LEFT JOIN aufgaben a ON a.id = e.aufgabe_id
          WHERE {where_clause}"
     )
 }
@@ -490,7 +451,7 @@ pub fn csv_escape(field: &str) -> String {
 
 pub fn entries_to_csv(rows: &[EntryRow]) -> AppResult<String> {
     let mut out = String::from('\u{feff}');
-    out.push_str("Start,Ende,Dauer,Task,Projekt,Aufgabe\n");
+    out.push_str("Start,Ende,Dauer,Task,Projekt\n");
     let mut total_seconds: i64 = 0;
     for row in rows {
         let start = parse_rfc3339(&row.start_at)
@@ -519,17 +480,16 @@ pub fn entries_to_csv(rows: &[EntryRow]) -> AppResult<String> {
             })
             .unwrap_or_default();
         out.push_str(&format!(
-            "{},{},{},{},{},{}\n",
+            "{},{},{},{},{}\n",
             csv_escape(&berlin_start),
             csv_escape(&berlin_end),
             csv_escape(&duration),
             csv_escape(row.task_name.as_deref().unwrap_or("")),
             csv_escape(row.project_name.as_deref().unwrap_or("")),
-            csv_escape(row.aufgabe_name.as_deref().unwrap_or("")),
         ));
     }
     out.push_str(&format!(
-        "{},,{},,,\n",
+        "{},,{},,\n",
         csv_escape("Summe"),
         csv_escape(&format_hm(total_seconds)),
     ));
@@ -564,21 +524,18 @@ mod tests {
         end_at: Option<&str>,
         task_name: Option<&str>,
         project_name: Option<&str>,
-        aufgabe_name: Option<&str>,
     ) -> EntryRow {
         EntryRow {
             id: 1,
             user_id: 1,
             task_id: None,
             project_id: None,
-            aufgabe_id: None,
             start_at: start_at.to_string(),
             end_at: end_at.map(str::to_string),
             status: "complete".into(),
             created_at: start_at.to_string(),
             task_name: task_name.map(str::to_string),
             project_name: project_name.map(str::to_string),
-            aufgabe_name: aufgabe_name.map(str::to_string),
         }
     }
 
@@ -586,7 +543,15 @@ mod tests {
     fn csv_empty_list_includes_zero_sum_row() {
         let csv = entries_to_csv(&[]).expect("csv");
         assert!(
-            csv.ends_with("Summe,,0:00,,,\n"),
+            csv.contains("Start,Ende,Dauer,Task,Projekt\n"),
+            "expected header without Aufgabe, got {csv:?}"
+        );
+        assert!(
+            !csv.contains("Aufgabe"),
+            "CSV must not contain Aufgabe, got {csv:?}"
+        );
+        assert!(
+            csv.ends_with("Summe,,0:00,,\n"),
             "expected sum footer, got {csv:?}"
         );
     }
@@ -599,19 +564,17 @@ mod tests {
                 Some("2026-08-21T12:30:00Z"),
                 Some("Meeting"),
                 Some("Elba"),
-                None,
             ),
             entry(
                 "2026-08-21T09:45:00Z",
                 Some("2026-08-21T11:00:00Z"),
-                Some("E-Mail"),
+                Some("E-Mail schreiben"),
                 Some("Efa"),
-                Some("beantworten"),
             ),
         ])
         .expect("csv");
         assert!(
-            csv.contains("Summe,,1:45,,,\n"),
+            csv.contains("Summe,,1:45,,\n"),
             "expected 1:45 sum, got {csv:?}"
         );
     }
@@ -624,13 +587,12 @@ mod tests {
                 Some("2026-08-21T12:30:00Z"),
                 Some("Meeting"),
                 None,
-                None,
             ),
-            entry("2026-08-21T13:00:00Z", None, Some("läuft"), None, None),
+            entry("2026-08-21T13:00:00Z", None, Some("läuft"), None),
         ])
         .expect("csv");
         assert!(
-            csv.contains("Summe,,0:30,,,\n"),
+            csv.contains("Summe,,0:30,,\n"),
             "expected 0:30 sum, got {csv:?}"
         );
     }

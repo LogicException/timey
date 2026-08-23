@@ -40,11 +40,6 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/api/tasks/{id}", patch(catalogs::patch_task))
         .route(
-            "/api/aufgaben",
-            get(catalogs::list_aufgaben).post(catalogs::create_aufgabe),
-        )
-        .route("/api/aufgaben/{id}", patch(catalogs::patch_aufgabe))
-        .route(
             "/api/entries",
             get(entries::list_entries).post(entries::create_entry),
         )

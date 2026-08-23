@@ -117,25 +117,15 @@ pub async fn set_project_archived(
     get_project(pool, id).await
 }
 
-pub async fn list_user_items(
+pub async fn list_tasks(
     pool: &SqlitePool,
-    table: UserItemTable,
     user_id: i64,
     include_archived: bool,
 ) -> AppResult<Vec<NamedRow>> {
-    let sql = match (table, include_archived) {
-        (UserItemTable::Task, true) => {
-            "SELECT id, user_id, name, archived, created_at FROM tasks WHERE user_id = ? ORDER BY name COLLATE NOCASE"
-        }
-        (UserItemTable::Task, false) => {
-            "SELECT id, user_id, name, archived, created_at FROM tasks WHERE user_id = ? AND archived = 0 ORDER BY name COLLATE NOCASE"
-        }
-        (UserItemTable::Aufgabe, true) => {
-            "SELECT id, user_id, name, archived, created_at FROM aufgaben WHERE user_id = ? ORDER BY name COLLATE NOCASE"
-        }
-        (UserItemTable::Aufgabe, false) => {
-            "SELECT id, user_id, name, archived, created_at FROM aufgaben WHERE user_id = ? AND archived = 0 ORDER BY name COLLATE NOCASE"
-        }
+    let sql = if include_archived {
+        "SELECT id, user_id, name, archived, created_at FROM tasks WHERE user_id = ? ORDER BY name COLLATE NOCASE"
+    } else {
+        "SELECT id, user_id, name, archived, created_at FROM tasks WHERE user_id = ? AND archived = 0 ORDER BY name COLLATE NOCASE"
     };
     Ok(sqlx::query_as::<_, NamedRow>(sql)
         .bind(user_id)
@@ -143,73 +133,49 @@ pub async fn list_user_items(
         .await?)
 }
 
-pub async fn create_user_item(
+pub async fn create_task(
     pool: &SqlitePool,
-    table: UserItemTable,
     user_id: i64,
     name: &str,
     now: DateTime<Utc>,
 ) -> AppResult<NamedRow> {
     let name = validate_name(name)?;
     let created_at = now.to_rfc3339();
-    let sql = match table {
-        UserItemTable::Task => {
-            "INSERT INTO tasks (user_id, name, archived, created_at) VALUES (?, ?, 0, ?)"
-        }
-        UserItemTable::Aufgabe => {
-            "INSERT INTO aufgaben (user_id, name, archived, created_at) VALUES (?, ?, 0, ?)"
-        }
-    };
-    let result = sqlx::query(sql)
-        .bind(user_id)
-        .bind(&name)
-        .bind(&created_at)
-        .execute(pool)
-        .await;
+    let result =
+        sqlx::query("INSERT INTO tasks (user_id, name, archived, created_at) VALUES (?, ?, 0, ?)")
+            .bind(user_id)
+            .bind(&name)
+            .bind(&created_at)
+            .execute(pool)
+            .await;
 
     match result {
-        Ok(done) => get_user_item(pool, table, user_id, done.last_insert_rowid()).await,
-        Err(sqlx::Error::Database(err)) if err.is_unique_violation() => Err(AppError::Conflict(
-            format!("{} bereits vorhanden", table.label()),
-        )),
+        Ok(done) => get_task(pool, user_id, done.last_insert_rowid()).await,
+        Err(sqlx::Error::Database(err)) if err.is_unique_violation() => {
+            Err(AppError::Conflict("Task bereits vorhanden".into()))
+        }
         Err(err) => Err(err.into()),
     }
 }
 
-pub async fn get_user_item(
-    pool: &SqlitePool,
-    table: UserItemTable,
-    user_id: i64,
-    id: i64,
-) -> AppResult<NamedRow> {
-    let sql = match table {
-        UserItemTable::Task => {
-            "SELECT id, user_id, name, archived, created_at FROM tasks WHERE id = ? AND user_id = ?"
-        }
-        UserItemTable::Aufgabe => {
-            "SELECT id, user_id, name, archived, created_at FROM aufgaben WHERE id = ? AND user_id = ?"
-        }
-    };
-    sqlx::query_as::<_, NamedRow>(sql)
-        .bind(id)
-        .bind(user_id)
-        .fetch_optional(pool)
-        .await?
-        .ok_or(AppError::NotFound)
+pub async fn get_task(pool: &SqlitePool, user_id: i64, id: i64) -> AppResult<NamedRow> {
+    sqlx::query_as::<_, NamedRow>(
+        "SELECT id, user_id, name, archived, created_at FROM tasks WHERE id = ? AND user_id = ?",
+    )
+    .bind(id)
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(AppError::NotFound)
 }
 
-pub async fn set_user_item_archived(
+pub async fn set_task_archived(
     pool: &SqlitePool,
-    table: UserItemTable,
     user_id: i64,
     id: i64,
     archived: bool,
 ) -> AppResult<NamedRow> {
-    let sql = match table {
-        UserItemTable::Task => "UPDATE tasks SET archived = ? WHERE id = ? AND user_id = ?",
-        UserItemTable::Aufgabe => "UPDATE aufgaben SET archived = ? WHERE id = ? AND user_id = ?",
-    };
-    let done = sqlx::query(sql)
+    let done = sqlx::query("UPDATE tasks SET archived = ? WHERE id = ? AND user_id = ?")
         .bind(archived)
         .bind(id)
         .bind(user_id)
@@ -218,21 +184,30 @@ pub async fn set_user_item_archived(
     if done.rows_affected() == 0 {
         return Err(AppError::NotFound);
     }
-    get_user_item(pool, table, user_id, id).await
+    get_task(pool, user_id, id).await
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum UserItemTable {
-    Task,
-    Aufgabe,
-}
+pub async fn rename_task(
+    pool: &SqlitePool,
+    user_id: i64,
+    id: i64,
+    name: &str,
+) -> AppResult<NamedRow> {
+    let name = validate_name(name)?;
+    let result = sqlx::query("UPDATE tasks SET name = ? WHERE id = ? AND user_id = ?")
+        .bind(&name)
+        .bind(id)
+        .bind(user_id)
+        .execute(pool)
+        .await;
 
-impl UserItemTable {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Task => "Task",
-            Self::Aufgabe => "Aufgabe",
+    match result {
+        Ok(done) if done.rows_affected() == 0 => Err(AppError::NotFound),
+        Ok(_) => get_task(pool, user_id, id).await,
+        Err(sqlx::Error::Database(err)) if err.is_unique_violation() => {
+            Err(AppError::Conflict("Task bereits vorhanden".into()))
         }
+        Err(err) => Err(err.into()),
     }
 }
 

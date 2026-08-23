@@ -14,12 +14,11 @@ pub async fn close_stale_for_user(
     work::close_if_stale(pool, user_id, now).await?;
 
     let running = sqlx::query_as::<_, EntryRow>(
-        "SELECT e.id, e.user_id, e.task_id, e.project_id, e.aufgabe_id, e.start_at, e.end_at, e.status, e.created_at,
-                t.name AS task_name, p.name AS project_name, a.name AS aufgabe_name
+        "SELECT e.id, e.user_id, e.task_id, e.project_id, e.start_at, e.end_at, e.status, e.created_at,
+                t.name AS task_name, p.name AS project_name
          FROM entries e
          LEFT JOIN tasks t ON t.id = e.task_id
          LEFT JOIN projects p ON p.id = e.project_id
-         LEFT JOIN aufgaben a ON a.id = e.aufgabe_id
          WHERE e.user_id = ? AND e.status = 'running'",
     )
     .bind(user_id)

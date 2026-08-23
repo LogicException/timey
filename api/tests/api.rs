@@ -409,8 +409,9 @@ async fn csv_export_contains_header() {
         .await;
     assert_eq!(status, StatusCode::OK);
     let raw = body["raw"].as_str().unwrap_or_default();
-    assert!(raw.contains("Start,Ende,Dauer,Task,Projekt,Aufgabe"));
-    assert!(raw.contains("Summe,,0:00,,,"));
+    assert!(raw.contains("Start,Ende,Dauer,Task,Projekt"));
+    assert!(!raw.contains("Aufgabe"));
+    assert!(raw.contains("Summe,,0:00,,"));
 }
 
 #[tokio::test]
@@ -656,4 +657,121 @@ async fn settings_patch_without_default_view_keeps_stored_value() {
     assert_eq!(body["work_start"], "09:00");
     assert_eq!(body["work_end"], "18:00");
     assert_eq!(body["default_view"], "week");
+}
+
+fn task_id_by_name(tasks: &Value, name: &str) -> i64 {
+    tasks
+        .as_array()
+        .expect("array")
+        .iter()
+        .find(|row| row["name"] == name)
+        .and_then(|row| row["id"].as_i64())
+        .expect("task id")
+}
+
+#[tokio::test]
+async fn patch_task_renames() {
+    let ctx = TestCtx::new().await;
+    let cookie = ctx.login("admin", "password1").await;
+    let (_, tasks, _) = ctx.request("GET", "/api/tasks", Some(&cookie), None).await;
+    let id = task_id_by_name(&tasks, "Coding");
+
+    let (status, body, _) = ctx
+        .request(
+            "PATCH",
+            &format!("/api/tasks/{id}"),
+            Some(&cookie),
+            Some(json!({ "name": "Coding reviewen" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["name"], "Coding reviewen");
+    assert_eq!(body["id"], id);
+}
+
+#[tokio::test]
+async fn patch_task_rename_conflict() {
+    let ctx = TestCtx::new().await;
+    let cookie = ctx.login("admin", "password1").await;
+    let (_, tasks, _) = ctx.request("GET", "/api/tasks", Some(&cookie), None).await;
+    let id = task_id_by_name(&tasks, "Coding");
+
+    let (status, body, _) = ctx
+        .request(
+            "PATCH",
+            &format!("/api/tasks/{id}"),
+            Some(&cookie),
+            Some(json!({ "name": "E-Mail" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+}
+
+#[tokio::test]
+async fn patch_task_empty_name_is_unprocessable() {
+    let ctx = TestCtx::new().await;
+    let cookie = ctx.login("admin", "password1").await;
+    let (_, tasks, _) = ctx.request("GET", "/api/tasks", Some(&cookie), None).await;
+    let id = task_id_by_name(&tasks, "Coding");
+
+    let (status, body, _) = ctx
+        .request(
+            "PATCH",
+            &format!("/api/tasks/{id}"),
+            Some(&cookie),
+            Some(json!({ "name": "   " })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+}
+
+#[tokio::test]
+async fn patch_task_empty_body_is_unprocessable() {
+    let ctx = TestCtx::new().await;
+    let cookie = ctx.login("admin", "password1").await;
+    let (_, tasks, _) = ctx.request("GET", "/api/tasks", Some(&cookie), None).await;
+    let id = task_id_by_name(&tasks, "Coding");
+
+    let (status, body, _) = ctx
+        .request(
+            "PATCH",
+            &format!("/api/tasks/{id}"),
+            Some(&cookie),
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+}
+
+#[tokio::test]
+async fn patch_task_foreign_id_is_not_found() {
+    let ctx = TestCtx::new().await;
+    let admin = ctx.login("admin", "password1").await;
+    let (status, _, _) = ctx
+        .request(
+            "POST",
+            "/api/admin/users",
+            Some(&admin),
+            Some(json!({
+                "username": "enrico",
+                "password": "password1",
+                "role": "user"
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let user = ctx.login("enrico", "password1").await;
+    let (_, tasks, _) = ctx.request("GET", "/api/tasks", Some(&user), None).await;
+    let foreign_id = task_id_by_name(&tasks, "Coding");
+
+    let (status, _, _) = ctx
+        .request(
+            "PATCH",
+            &format!("/api/tasks/{foreign_id}"),
+            Some(&admin),
+            Some(json!({ "name": "Fremd" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }

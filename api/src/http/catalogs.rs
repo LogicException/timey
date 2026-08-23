@@ -2,10 +2,10 @@ use axum::Json;
 use axum::extract::{Path, Query, State};
 use serde::{Deserialize, Serialize};
 
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::http::extractors::{CurrentUser, require_admin};
 use crate::models::{NamedRow, ProjectRow};
-use crate::services::catalogs::{self, UserItemTable};
+use crate::services::catalogs;
 use crate::state::AppState;
 
 #[derive(Deserialize)]
@@ -22,6 +22,12 @@ pub struct NameBody {
 #[derive(Deserialize)]
 pub struct ArchiveBody {
     archived: bool,
+}
+
+#[derive(Deserialize)]
+pub struct PatchTaskBody {
+    name: Option<String>,
+    archived: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -94,7 +100,8 @@ pub async fn list_tasks(
     State(state): State<AppState>,
     Query(query): Query<ListQuery>,
 ) -> AppResult<Json<Vec<NamedView>>> {
-    list_items(user, state, query, UserItemTable::Task).await
+    let rows = catalogs::list_tasks(&state.pool, user.id, query.include_archived).await?;
+    Ok(Json(rows.into_iter().map(NamedView::from).collect()))
 }
 
 pub async fn create_task(
@@ -102,74 +109,32 @@ pub async fn create_task(
     State(state): State<AppState>,
     Json(body): Json<NameBody>,
 ) -> AppResult<Json<NamedView>> {
-    create_item(user, state, body, UserItemTable::Task).await
+    let row = catalogs::create_task(&state.pool, user.id, &body.name, chrono::Utc::now()).await?;
+    Ok(Json(NamedView::from(row)))
 }
 
 pub async fn patch_task(
     user: CurrentUser,
     State(state): State<AppState>,
     Path(id): Path<i64>,
-    Json(body): Json<ArchiveBody>,
+    Json(body): Json<PatchTaskBody>,
 ) -> AppResult<Json<NamedView>> {
-    patch_item(user, state, id, body, UserItemTable::Task).await
-}
-
-pub async fn list_aufgaben(
-    user: CurrentUser,
-    State(state): State<AppState>,
-    Query(query): Query<ListQuery>,
-) -> AppResult<Json<Vec<NamedView>>> {
-    list_items(user, state, query, UserItemTable::Aufgabe).await
-}
-
-pub async fn create_aufgabe(
-    user: CurrentUser,
-    State(state): State<AppState>,
-    Json(body): Json<NameBody>,
-) -> AppResult<Json<NamedView>> {
-    create_item(user, state, body, UserItemTable::Aufgabe).await
-}
-
-pub async fn patch_aufgabe(
-    user: CurrentUser,
-    State(state): State<AppState>,
-    Path(id): Path<i64>,
-    Json(body): Json<ArchiveBody>,
-) -> AppResult<Json<NamedView>> {
-    patch_item(user, state, id, body, UserItemTable::Aufgabe).await
-}
-
-async fn list_items(
-    user: CurrentUser,
-    state: AppState,
-    query: ListQuery,
-    table: UserItemTable,
-) -> AppResult<Json<Vec<NamedView>>> {
-    let rows =
-        catalogs::list_user_items(&state.pool, table, user.id, query.include_archived).await?;
-    Ok(Json(rows.into_iter().map(NamedView::from).collect()))
-}
-
-async fn create_item(
-    user: CurrentUser,
-    state: AppState,
-    body: NameBody,
-    table: UserItemTable,
-) -> AppResult<Json<NamedView>> {
-    let row =
-        catalogs::create_user_item(&state.pool, table, user.id, &body.name, chrono::Utc::now())
-            .await?;
-    Ok(Json(NamedView::from(row)))
-}
-
-async fn patch_item(
-    user: CurrentUser,
-    state: AppState,
-    id: i64,
-    body: ArchiveBody,
-    table: UserItemTable,
-) -> AppResult<Json<NamedView>> {
-    let row =
-        catalogs::set_user_item_archived(&state.pool, table, user.id, id, body.archived).await?;
-    Ok(Json(NamedView::from(row)))
+    match (body.name.as_deref(), body.archived) {
+        (None, None) => Err(AppError::Unprocessable(
+            "name oder archived ist erforderlich".into(),
+        )),
+        (Some(name), None) => {
+            let row = catalogs::rename_task(&state.pool, user.id, id, name).await?;
+            Ok(Json(NamedView::from(row)))
+        }
+        (None, Some(archived)) => {
+            let row = catalogs::set_task_archived(&state.pool, user.id, id, archived).await?;
+            Ok(Json(NamedView::from(row)))
+        }
+        (Some(name), Some(archived)) => {
+            catalogs::rename_task(&state.pool, user.id, id, name).await?;
+            let row = catalogs::set_task_archived(&state.pool, user.id, id, archived).await?;
+            Ok(Json(NamedView::from(row)))
+        }
+    }
 }

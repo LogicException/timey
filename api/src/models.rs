@@ -116,14 +116,12 @@ pub struct EntryRow {
     pub user_id: i64,
     pub task_id: Option<i64>,
     pub project_id: Option<i64>,
-    pub aufgabe_id: Option<i64>,
     pub start_at: String,
     pub end_at: Option<String>,
     pub status: String,
     pub created_at: String,
     pub task_name: Option<String>,
     pub project_name: Option<String>,
-    pub aufgabe_name: Option<String>,
 }
 
 #[derive(Debug, Clone, FromRow)]

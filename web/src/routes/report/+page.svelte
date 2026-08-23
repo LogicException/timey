@@ -19,10 +19,8 @@
 	let entries = $state<Entry[]>([]);
 	let tasks = $state<NamedItem[]>([]);
 	let projects = $state<NamedItem[]>([]);
-	let aufgaben = $state<NamedItem[]>([]);
 	let selectedTasks = $state<number[]>([]);
 	let selectedProjects = $state<number[]>([]);
-	let selectedAufgaben = $state<number[]>([]);
 	let error = $state('');
 
 	function applyPreset(next: RangePreset) {
@@ -38,19 +36,16 @@
 		const params = new URLSearchParams({ from, to });
 		if (selectedTasks.length) params.set('task_ids', selectedTasks.join(','));
 		if (selectedProjects.length) params.set('project_ids', selectedProjects.join(','));
-		if (selectedAufgaben.length) params.set('aufgabe_ids', selectedAufgaben.join(','));
 		entries = await api(`/api/entries?${params}`);
 	}
 
 	$effect(() => {
 		void Promise.all([
 			api<NamedItem[]>('/api/tasks?include_archived=true'),
-			api<NamedItem[]>('/api/projects?include_archived=true'),
-			api<NamedItem[]>('/api/aufgaben?include_archived=true')
-		]).then(([t, p, a]) => {
+			api<NamedItem[]>('/api/projects?include_archived=true')
+		]).then(([t, p]) => {
 			tasks = t;
 			projects = p;
-			aufgaben = a;
 		});
 	});
 
@@ -59,7 +54,6 @@
 		void to;
 		void selectedTasks;
 		void selectedProjects;
-		void selectedAufgaben;
 		void load().catch((err) => {
 			error = err instanceof Error ? err.message : 'Laden fehlgeschlagen';
 		});
@@ -69,7 +63,6 @@
 		const params = new URLSearchParams({ from, to });
 		if (selectedTasks.length) params.set('task_ids', selectedTasks.join(','));
 		if (selectedProjects.length) params.set('project_ids', selectedProjects.join(','));
-		if (selectedAufgaben.length) params.set('aufgabe_ids', selectedAufgaben.join(','));
 		window.location.href = `/api/entries/export.csv?${params}`;
 	}
 </script>
@@ -88,19 +81,13 @@
 		<div class="w-52"><DateField bind:value={to} label="Bis" /></div>
 		<button class="self-end rounded-md bg-amber px-4 py-2 text-sm text-bg" onclick={exportCsv}>CSV exportieren</button>
 	</div>
-	<div class="grid gap-4 md:grid-cols-3">
+	<div class="grid gap-4 md:grid-cols-2">
 		<MultiSelect label="Tasks" items={tasks} bind:value={selectedTasks} placeholder="Task suchen …" />
 		<MultiSelect
 			label="Projekte"
 			items={projects}
 			bind:value={selectedProjects}
 			placeholder="Projekt suchen …"
-		/>
-		<MultiSelect
-			label="Aufgaben"
-			items={aufgaben}
-			bind:value={selectedAufgaben}
-			placeholder="Aufgabe suchen …"
 		/>
 	</div>
 	{#if error}
@@ -115,7 +102,6 @@
 					<th class="px-4 py-2">Dauer</th>
 					<th class="px-4 py-2">Task</th>
 					<th class="px-4 py-2">Projekt</th>
-					<th class="px-4 py-2">Aufgabe</th>
 				</tr>
 			</thead>
 			<tbody>
@@ -132,7 +118,6 @@
 						<td class="clock-face px-4 py-2">{formatHm(durationBetween(entry.start_at, entry.end_at))}</td>
 						<td class="px-4 py-2">{entry.task_name ?? '—'}</td>
 						<td class="px-4 py-2">{entry.project_name ?? '—'}</td>
-						<td class="px-4 py-2">{entry.aufgabe_name ?? '—'}</td>
 					</tr>
 				{/each}
 			</tbody>
@@ -140,7 +125,7 @@
 				<tr class="border-t border-line bg-panel-2">
 					<td class="px-4 py-2 text-xs uppercase tracking-wider text-muted" colspan="2">Summe</td>
 					<td class="clock-face px-4 py-2">{formatHm(totalDurationSeconds(entries))}</td>
-					<td colspan="3"></td>
+					<td colspan="2"></td>
 				</tr>
 			</tfoot>
 		</table>

@@ -16,7 +16,6 @@
 	let timer = $state<Entry | null>(null);
 	let tasks = $state<NamedItem[]>([]);
 	let projects = $state<NamedItem[]>([]);
-	let aufgaben = $state<NamedItem[]>([]);
 
 	const publicPath = $derived(page.url.pathname === '/login');
 
@@ -36,18 +35,16 @@
 	}
 
 	async function refreshTimers() {
-		const [workRes, timerRes, taskRes, projectRes, aufgabeRes] = await Promise.all([
+		const [workRes, timerRes, taskRes, projectRes] = await Promise.all([
 			api<WorkSnapshot>('/api/work-sessions/current'),
 			api<Entry | null>('/api/entries/timer'),
 			api<NamedItem[]>('/api/tasks'),
-			api<NamedItem[]>('/api/projects'),
-			api<NamedItem[]>('/api/aufgaben')
+			api<NamedItem[]>('/api/projects')
 		]);
 		work = workRes;
 		timer = timerRes;
 		tasks = taskRes;
 		projects = projectRes;
-		aufgaben = aufgabeRes;
 	}
 
 	$effect(() => {
@@ -94,7 +91,7 @@
 				>
 			</nav>
 		</header>
-		<Timers {work} {timer} {tasks} {projects} {aufgaben} onRefresh={refreshTimers} />
+		<Timers {work} {timer} {tasks} {projects} onRefresh={refreshTimers} />
 		<main class="flex-1">{@render children()}</main>
 	</div>
 {/if}

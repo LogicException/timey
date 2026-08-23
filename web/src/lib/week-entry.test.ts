@@ -7,10 +7,8 @@ function completeEntry(overrides: Partial<Entry> = {}): Entry {
 		id: 12,
 		task_id: 3,
 		project_id: 8,
-		aufgabe_id: null,
 		task_name: 'E-Mail',
 		project_name: 'Efa',
-		aufgabe_name: null,
 		start_at: '2026-08-21T06:45:00.000Z',
 		end_at: '2026-08-21T08:00:00.000Z',
 		status: 'complete',
@@ -24,8 +22,7 @@ describe('entryToEditState', () => {
 			startIso: '2026-08-21T06:45:00.000Z',
 			endIso: '2026-08-21T08:00:00.000Z',
 			taskId: 3,
-			projectId: 8,
-			aufgabeId: null
+			projectId: 8
 		});
 	});
 
@@ -44,14 +41,12 @@ describe('savePayload', () => {
 			savePayload({
 				taskId: 3,
 				projectId: 8,
-				aufgabeId: 1,
 				startIso: '2026-08-21T06:45:00.000Z',
 				endIso: '2026-08-21T08:00:00.000Z'
 			})
 		).toEqual({
 			task_id: 3,
 			project_id: 8,
-			aufgabe_id: 1,
 			start_at: '2026-08-21T06:45:00.000Z',
 			end_at: '2026-08-21T08:00:00.000Z'
 		});
