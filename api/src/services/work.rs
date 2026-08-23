@@ -106,11 +106,7 @@ pub async fn start(pool: &SqlitePool, user_id: i64, now: DateTime<Utc>) -> AppRe
     current(pool, user_id, now).await
 }
 
-pub async fn require_running(
-    pool: &SqlitePool,
-    user_id: i64,
-    now: DateTime<Utc>,
-) -> AppResult<()> {
+pub async fn require_running(pool: &SqlitePool, user_id: i64, now: DateTime<Utc>) -> AppResult<()> {
     let local_date = today(now);
     let session = open_session(pool, user_id, local_date).await?;
     match session
@@ -245,9 +241,7 @@ async fn session_dates_in(
 
     let mut dates = Vec::with_capacity(rows.len());
     for row in rows {
-        dates.push(
-            parse_date(&row).map_err(|_| AppError::Internal("local_date ungültig".into()))?,
-        );
+        dates.push(parse_date(&row).map_err(|_| AppError::Internal("local_date ungültig".into()))?);
     }
     Ok(dates)
 }
