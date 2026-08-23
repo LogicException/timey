@@ -15,7 +15,8 @@
 		startOfWeek
 	} from '$lib/dates';
 	import { applyBerlinTimes, entryToEditState, savePayload } from '$lib/week-entry';
-	import type { Entry, NamedItem, UserSettings } from '$lib/types';
+	import { workIntervalEvents } from '$lib/week-work-intervals';
+	import type { Entry, NamedItem, UserSettings, WorkDaySummary } from '$lib/types';
 	import { DEFAULT_WORK_END, DEFAULT_WORK_START, weekSlotTimes } from '$lib/working-hours';
 
 	let el: HTMLDivElement;
@@ -37,6 +38,10 @@
 
 	async function loadRange(from: string, to: string): Promise<Entry[]> {
 		return api(`/api/entries?from=${from}&to=${to}`);
+	}
+
+	async function loadWorkDays(from: string, to: string): Promise<WorkDaySummary[]> {
+		return api(`/api/work-sessions?from=${from}&to=${to}`);
 	}
 
 	function eventTitle(entry: Entry): string {
@@ -79,7 +84,7 @@
 		const end = formatBerlinDate(new Date(calendar.view.activeEnd.getTime() - 1));
 		const from = startOfWeek(start);
 		const to = endOfWeek(end);
-		const entries = await loadRange(from, to);
+		const [entries, workDays] = await Promise.all([loadRange(from, to), loadWorkDays(from, to)]);
 		entriesById = new Map();
 		calendar.removeAllEvents();
 		for (const entry of entries) {
@@ -91,6 +96,9 @@
 				start: entry.start_at,
 				end: entry.end_at
 			});
+		}
+		for (const event of workIntervalEvents(workDays)) {
+			calendar.addEvent(event);
 		}
 	}
 
@@ -135,8 +143,14 @@
 					calendar?.unselect();
 				},
 				eventDidMount: (info) => {
+					if (info.event.display === 'background') {
+						info.el.style.pointerEvents = 'none';
+						return;
+					}
+					const entryId = Number(info.event.id);
+					if (!entriesById.has(entryId)) return;
 					info.el.addEventListener('dblclick', () => {
-						openEdit(Number(info.event.id));
+						openEdit(entryId);
 					});
 				},
 				datesSet: () => {

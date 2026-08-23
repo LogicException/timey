@@ -58,3 +58,8 @@ body {
 .fc .fc-col-header-cell-cushion {
 	font-family: var(--font-mono);
 }
+
+.fc .fc-bg-event.work-interval {
+	background-color: rgba(228, 176, 74, 0.16);
+	opacity: 1;
+}

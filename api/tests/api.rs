@@ -558,6 +558,18 @@ async fn work_sessions_range_returns_today_after_start() {
     assert_eq!(days.len(), 1);
     assert_eq!(days[0]["local_date"], day);
     assert!(days[0]["elapsed_seconds"].as_i64().expect("seconds") >= 0);
+    let intervals = days[0]["intervals"].as_array().expect("intervals");
+    assert_eq!(intervals.len(), 1);
+    assert!(
+        intervals[0]["start_at"]
+            .as_str()
+            .is_some_and(|value| !value.is_empty())
+    );
+    assert!(
+        intervals[0]["end_at"]
+            .as_str()
+            .is_some_and(|value| !value.is_empty())
+    );
 }
 
 #[tokio::test]
