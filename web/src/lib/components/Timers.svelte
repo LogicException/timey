@@ -144,7 +144,12 @@
 		<div class="border-t border-line pt-3">
 			<p class="mb-2 text-xs uppercase tracking-[0.18em] text-muted">Eintrag läuft — Task und Projekt angeben</p>
 			<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-				<NamedSelect label="Task" items={tasks} bind:value={taskId} />
+				<NamedSelect
+					label="Task"
+					items={tasks}
+					bind:value={taskId}
+					currentLabel={timer?.task_name ?? null}
+				/>
 				<NamedSelect label="Projekt" items={projects} bind:value={projectId} optional />
 				<div class="flex items-end gap-2">
 					<button class="px-3 py-2 text-sm text-muted" onclick={cancelTimer}>Abbrechen</button>

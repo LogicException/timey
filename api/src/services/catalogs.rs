@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use sqlx::SqlitePool;
 
+use crate::domain::system_task::{UNBESTIMMT_NAME, is_reserved_task_name};
 use crate::error::{AppError, AppResult};
 use crate::models::{NamedRow, ProjectRow};
 
@@ -30,6 +31,23 @@ pub async fn seed_default_tasks(
         .execute(pool)
         .await?;
     }
+    seed_unbestimmt(pool, user_id, &created_at).await
+}
+
+async fn seed_unbestimmt(pool: &SqlitePool, user_id: i64, created_at: &str) -> AppResult<()> {
+    sqlx::query("UPDATE tasks SET is_system = 1 WHERE user_id = ? AND name = ? COLLATE NOCASE")
+        .bind(user_id)
+        .bind(UNBESTIMMT_NAME)
+        .execute(pool)
+        .await?;
+    sqlx::query(
+        "INSERT OR IGNORE INTO tasks (user_id, name, archived, is_system, created_at) VALUES (?, ?, 0, 1, ?)",
+    )
+    .bind(user_id)
+    .bind(UNBESTIMMT_NAME)
+    .bind(created_at)
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
@@ -117,17 +135,29 @@ pub async fn set_project_archived(
     get_project(pool, id).await
 }
 
+const TASK_COLUMNS: &str = "id, user_id, name, archived, is_system, created_at";
+
 pub async fn list_tasks(
     pool: &SqlitePool,
     user_id: i64,
     include_archived: bool,
+    include_system: bool,
 ) -> AppResult<Vec<NamedRow>> {
-    let sql = if include_archived {
-        "SELECT id, user_id, name, archived, created_at FROM tasks WHERE user_id = ? ORDER BY name COLLATE NOCASE"
-    } else {
-        "SELECT id, user_id, name, archived, created_at FROM tasks WHERE user_id = ? AND archived = 0 ORDER BY name COLLATE NOCASE"
+    let sql = match (include_archived, include_system) {
+        (true, true) => format!(
+            "SELECT {TASK_COLUMNS} FROM tasks WHERE user_id = ? ORDER BY name COLLATE NOCASE"
+        ),
+        (true, false) => format!(
+            "SELECT {TASK_COLUMNS} FROM tasks WHERE user_id = ? AND is_system = 0 ORDER BY name COLLATE NOCASE"
+        ),
+        (false, true) => format!(
+            "SELECT {TASK_COLUMNS} FROM tasks WHERE user_id = ? AND archived = 0 ORDER BY name COLLATE NOCASE"
+        ),
+        (false, false) => format!(
+            "SELECT {TASK_COLUMNS} FROM tasks WHERE user_id = ? AND archived = 0 AND is_system = 0 ORDER BY name COLLATE NOCASE"
+        ),
     };
-    Ok(sqlx::query_as::<_, NamedRow>(sql)
+    Ok(sqlx::query_as::<_, NamedRow>(&sql)
         .bind(user_id)
         .fetch_all(pool)
         .await?)
@@ -160,7 +190,7 @@ pub async fn create_task(
 
 pub async fn get_task(pool: &SqlitePool, user_id: i64, id: i64) -> AppResult<NamedRow> {
     sqlx::query_as::<_, NamedRow>(
-        "SELECT id, user_id, name, archived, created_at FROM tasks WHERE id = ? AND user_id = ?",
+        "SELECT id, user_id, name, archived, is_system, created_at FROM tasks WHERE id = ? AND user_id = ?",
     )
     .bind(id)
     .bind(user_id)
@@ -175,6 +205,7 @@ pub async fn set_task_archived(
     id: i64,
     archived: bool,
 ) -> AppResult<NamedRow> {
+    reject_system_mutation(&get_task(pool, user_id, id).await?)?;
     let done = sqlx::query("UPDATE tasks SET archived = ? WHERE id = ? AND user_id = ?")
         .bind(archived)
         .bind(id)
@@ -193,6 +224,7 @@ pub async fn rename_task(
     id: i64,
     name: &str,
 ) -> AppResult<NamedRow> {
+    reject_system_mutation(&get_task(pool, user_id, id).await?)?;
     let name = validate_name(name)?;
     let result = sqlx::query("UPDATE tasks SET name = ? WHERE id = ? AND user_id = ?")
         .bind(&name)
@@ -211,12 +243,65 @@ pub async fn rename_task(
     }
 }
 
+pub async fn delete_task(pool: &SqlitePool, user_id: i64, id: i64) -> AppResult<()> {
+    let task = get_task(pool, user_id, id).await?;
+    if task.is_system {
+        return Err(AppError::Conflict(
+            "interner Task kann nicht gelöscht werden".into(),
+        ));
+    }
+
+    seed_unbestimmt(pool, user_id, &Utc::now().to_rfc3339()).await?;
+    let sink = get_system_task(pool, user_id).await?;
+
+    let mut tx = pool.begin().await?;
+    sqlx::query("UPDATE entries SET task_id = ? WHERE user_id = ? AND task_id = ?")
+        .bind(sink.id)
+        .bind(user_id)
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    let done = sqlx::query("DELETE FROM tasks WHERE id = ? AND user_id = ? AND is_system = 0")
+        .bind(id)
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+    if done.rows_affected() == 0 {
+        tx.rollback().await?;
+        return Err(AppError::NotFound);
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
+async fn get_system_task(pool: &SqlitePool, user_id: i64) -> AppResult<NamedRow> {
+    sqlx::query_as::<_, NamedRow>(
+        "SELECT id, user_id, name, archived, is_system, created_at FROM tasks WHERE user_id = ? AND is_system = 1",
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(AppError::NotFound)
+}
+
+fn reject_system_mutation(task: &NamedRow) -> AppResult<()> {
+    if task.is_system {
+        return Err(AppError::Conflict(
+            "interner Task kann nicht verändert werden".into(),
+        ));
+    }
+    Ok(())
+}
+
 fn validate_name(name: &str) -> AppResult<String> {
     let trimmed = name.trim();
     if trimmed.is_empty() || trimmed.len() > 120 {
         return Err(AppError::Unprocessable(
             "Name muss zwischen 1 und 120 Zeichen haben".into(),
         ));
+    }
+    if is_reserved_task_name(trimmed) {
+        return Err(AppError::Unprocessable("Name ist reserviert".into()));
     }
     Ok(trimmed.to_string())
 }

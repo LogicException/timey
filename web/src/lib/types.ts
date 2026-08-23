@@ -21,6 +21,7 @@ export type NamedItem = {
 	id: number;
 	name: string;
 	archived: boolean;
+	system?: boolean;
 };
 
 export type Entry = {

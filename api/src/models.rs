@@ -107,6 +107,7 @@ pub struct NamedRow {
     pub user_id: i64,
     pub name: String,
     pub archived: bool,
+    pub is_system: bool,
     pub created_at: String,
 }
 

@@ -1,17 +1,22 @@
 <script lang="ts">
+	import { namedSelectOptions } from '$lib/named-select';
 	import type { NamedItem } from '$lib/types';
 
 	let {
 		label,
 		items,
 		value = $bindable(),
-		optional = false
+		optional = false,
+		currentLabel = null
 	}: {
 		label: string;
 		items: NamedItem[];
 		value: number | null;
 		optional?: boolean;
+		currentLabel?: string | null;
 	} = $props();
+
+	const options = $derived(namedSelectOptions(items, value, currentLabel));
 </script>
 
 <label class="block">
@@ -27,7 +32,7 @@
 		{#if optional}
 			<option value="">—</option>
 		{/if}
-		{#each items.filter((item) => !item.archived) as item}
+		{#each options as item}
 			<option value={item.id}>{item.name}</option>
 		{/each}
 	</select>

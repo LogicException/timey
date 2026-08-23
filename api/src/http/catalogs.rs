@@ -12,6 +12,8 @@ use crate::state::AppState;
 pub struct ListQuery {
     #[serde(default)]
     include_archived: bool,
+    #[serde(default)]
+    include_system: bool,
 }
 
 #[derive(Deserialize)]
@@ -52,6 +54,7 @@ pub struct NamedView {
     id: i64,
     name: String,
     archived: bool,
+    system: bool,
 }
 
 impl From<NamedRow> for NamedView {
@@ -60,6 +63,7 @@ impl From<NamedRow> for NamedView {
             id: row.id,
             name: row.name,
             archived: row.archived,
+            system: row.is_system,
         }
     }
 }
@@ -100,7 +104,13 @@ pub async fn list_tasks(
     State(state): State<AppState>,
     Query(query): Query<ListQuery>,
 ) -> AppResult<Json<Vec<NamedView>>> {
-    let rows = catalogs::list_tasks(&state.pool, user.id, query.include_archived).await?;
+    let rows = catalogs::list_tasks(
+        &state.pool,
+        user.id,
+        query.include_archived,
+        query.include_system,
+    )
+    .await?;
     Ok(Json(rows.into_iter().map(NamedView::from).collect()))
 }
 
@@ -137,4 +147,13 @@ pub async fn patch_task(
             Ok(Json(NamedView::from(row)))
         }
     }
+}
+
+pub async fn delete_task(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> AppResult<Json<serde_json::Value>> {
+    catalogs::delete_task(&state.pool, user.id, id).await?;
+    Ok(Json(serde_json::json!({ "ok": true })))
 }

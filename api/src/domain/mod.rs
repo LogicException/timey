@@ -2,6 +2,7 @@ pub mod default_view;
 pub mod midnight;
 pub mod overlap;
 pub mod same_day;
+pub mod system_task;
 pub mod work_duration;
 pub mod working_hours;
 

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { api } from '$lib/api';
-	import { renameIfChanged } from '$lib/catalog-name';
+	import { isReservedTaskName, renameIfChanged } from '$lib/catalog-name';
 	import type { NamedItem } from '$lib/types';
 
 	let tasks = $state<NamedItem[]>([]);
@@ -20,6 +20,10 @@
 
 	async function createTask() {
 		error = '';
+		if (isReservedTaskName(name)) {
+			error = 'Name ist reserviert';
+			return;
+		}
 		try {
 			await api('/api/tasks', { method: 'POST', body: JSON.stringify({ name }) });
 			name = '';
@@ -35,6 +39,19 @@
 			body: JSON.stringify({ archived: !item.archived })
 		});
 		await load();
+	}
+
+	async function remove(item: NamedItem) {
+		if (!confirm('Einträge werden auf „unbestimmt“ umgebucht.')) {
+			return;
+		}
+		error = '';
+		try {
+			await api(`/api/tasks/${item.id}`, { method: 'DELETE' });
+			await load();
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Fehler';
+		}
 	}
 
 	function startEdit(item: NamedItem) {
@@ -65,6 +82,10 @@
 		draft = '';
 		if (next == null) return;
 		error = '';
+		if (isReservedTaskName(next)) {
+			error = 'Name ist reserviert';
+			return;
+		}
 		try {
 			await api(`/api/tasks/${item.id}`, {
 				method: 'PATCH',
@@ -119,9 +140,12 @@
 						onclick={() => startEdit(item)}>{item.name}</button
 					>
 				{/if}
-				<button class="shrink-0 text-xs text-muted" onclick={() => archive(item)}
-					>{item.archived ? 'Reaktivieren' : 'Archivieren'}</button
-				>
+				<div class="flex shrink-0 gap-3">
+					<button class="text-xs text-muted" onclick={() => archive(item)}
+						>{item.archived ? 'Reaktivieren' : 'Archivieren'}</button
+					>
+					<button class="text-xs text-stop" onclick={() => void remove(item)}>Löschen</button>
+				</div>
 			</li>
 		{/each}
 	</ul>

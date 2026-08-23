@@ -41,7 +41,7 @@
 
 	$effect(() => {
 		void Promise.all([
-			api<NamedItem[]>('/api/tasks?include_archived=true'),
+			api<NamedItem[]>('/api/tasks?include_archived=true&include_system=true'),
 			api<NamedItem[]>('/api/projects?include_archived=true')
 		]).then(([t, p]) => {
 			tasks = t;

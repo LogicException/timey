@@ -659,6 +659,42 @@ async fn settings_patch_without_default_view_keeps_stored_value() {
     assert_eq!(body["default_view"], "week");
 }
 
+#[tokio::test]
+async fn list_tasks_hides_system_unless_requested() {
+    let ctx = TestCtx::new().await;
+    let cookie = ctx.login("admin", "password1").await;
+
+    let (status, tasks, _) = ctx.request("GET", "/api/tasks", Some(&cookie), None).await;
+    assert_eq!(status, StatusCode::OK);
+    let names: Vec<&str> = tasks
+        .as_array()
+        .expect("array")
+        .iter()
+        .filter_map(|row| row["name"].as_str())
+        .collect();
+    assert!(!names.contains(&"unbestimmt"));
+    assert!(
+        tasks
+            .as_array()
+            .expect("array")
+            .iter()
+            .all(|row| row["system"] == false)
+    );
+
+    let (status, tasks, _) = ctx
+        .request("GET", "/api/tasks?include_system=true", Some(&cookie), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let unbestimmt = tasks
+        .as_array()
+        .expect("array")
+        .iter()
+        .find(|row| row["name"] == "unbestimmt")
+        .expect("system task");
+    assert_eq!(unbestimmt["system"], true);
+    assert_eq!(unbestimmt["archived"], false);
+}
+
 fn task_id_by_name(tasks: &Value, name: &str) -> i64 {
     tasks
         .as_array()
@@ -774,4 +810,254 @@ async fn patch_task_foreign_id_is_not_found() {
         )
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn delete_task_reassigns_entries_and_removes_task() {
+    let ctx = TestCtx::new().await;
+    let cookie = ctx.login("admin", "password1").await;
+    let (_, tasks, _) = ctx.request("GET", "/api/tasks", Some(&cookie), None).await;
+    let coding_id = task_id_by_name(&tasks, "Coding");
+    let (_, system_tasks, _) = ctx
+        .request("GET", "/api/tasks?include_system=true", Some(&cookie), None)
+        .await;
+    let unbestimmt_id = task_id_by_name(&system_tasks, "unbestimmt");
+
+    let (status, complete, _) = ctx
+        .request(
+            "POST",
+            "/api/entries",
+            Some(&cookie),
+            Some(json!({
+                "task_id": coding_id,
+                "start_at": "2026-08-21T07:00:00Z",
+                "end_at": "2026-08-21T08:00:00Z"
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{complete}");
+    let complete_id = complete["id"].as_i64().expect("complete id");
+
+    let (status, running, _) = ctx
+        .request(
+            "POST",
+            "/api/entries/timer/start",
+            Some(&cookie),
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{running}");
+    let running_id = running["id"].as_i64().expect("running id");
+    let (status, assigned, _) = ctx
+        .request(
+            "PATCH",
+            &format!("/api/entries/{running_id}"),
+            Some(&cookie),
+            Some(json!({
+                "task_id": coding_id,
+                "start_at": running["start_at"]
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{assigned}");
+
+    let (status, body, _) = ctx
+        .request(
+            "DELETE",
+            &format!("/api/tasks/{coding_id}"),
+            Some(&cookie),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let (status, tasks, _) = ctx.request("GET", "/api/tasks", Some(&cookie), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        tasks
+            .as_array()
+            .expect("array")
+            .iter()
+            .all(|row| row["name"] != "Coding")
+    );
+
+    let (status, entries, _) = ctx
+        .request(
+            "GET",
+            "/api/entries?from=2026-08-21&to=2026-08-21",
+            Some(&cookie),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{entries}");
+    let complete_row = entries
+        .as_array()
+        .expect("array")
+        .iter()
+        .find(|row| row["id"] == complete_id)
+        .expect("complete entry");
+    assert_eq!(complete_row["task_id"], unbestimmt_id);
+    assert_eq!(complete_row["task_name"], "unbestimmt");
+
+    let (status, timer, _) = ctx
+        .request("GET", "/api/entries/timer", Some(&cookie), None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{timer}");
+    assert_eq!(timer["id"], running_id);
+    assert_eq!(timer["task_id"], unbestimmt_id);
+    assert_eq!(timer["status"], "running");
+}
+
+#[tokio::test]
+async fn delete_system_task_is_conflict() {
+    let ctx = TestCtx::new().await;
+    let cookie = ctx.login("admin", "password1").await;
+    let (_, tasks, _) = ctx
+        .request("GET", "/api/tasks?include_system=true", Some(&cookie), None)
+        .await;
+    let id = task_id_by_name(&tasks, "unbestimmt");
+
+    let (status, body, _) = ctx
+        .request("DELETE", &format!("/api/tasks/{id}"), Some(&cookie), None)
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+}
+
+#[tokio::test]
+async fn patch_system_task_is_conflict() {
+    let ctx = TestCtx::new().await;
+    let cookie = ctx.login("admin", "password1").await;
+    let (_, tasks, _) = ctx
+        .request("GET", "/api/tasks?include_system=true", Some(&cookie), None)
+        .await;
+    let id = task_id_by_name(&tasks, "unbestimmt");
+
+    let (status, body, _) = ctx
+        .request(
+            "PATCH",
+            &format!("/api/tasks/{id}"),
+            Some(&cookie),
+            Some(json!({ "name": "anders" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+
+    let (status, body, _) = ctx
+        .request(
+            "PATCH",
+            &format!("/api/tasks/{id}"),
+            Some(&cookie),
+            Some(json!({ "archived": true })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+}
+
+#[tokio::test]
+async fn reserved_task_name_is_unprocessable() {
+    let ctx = TestCtx::new().await;
+    let cookie = ctx.login("admin", "password1").await;
+
+    let (status, body, _) = ctx
+        .request(
+            "POST",
+            "/api/tasks",
+            Some(&cookie),
+            Some(json!({ "name": "  Unbestimmt  " })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+
+    let (_, tasks, _) = ctx.request("GET", "/api/tasks", Some(&cookie), None).await;
+    let id = task_id_by_name(&tasks, "Coding");
+    let (status, body, _) = ctx
+        .request(
+            "PATCH",
+            &format!("/api/tasks/{id}"),
+            Some(&cookie),
+            Some(json!({ "name": "unbestimmt" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+}
+
+#[tokio::test]
+async fn create_entry_rejects_system_task() {
+    let ctx = TestCtx::new().await;
+    let cookie = ctx.login("admin", "password1").await;
+    let (_, tasks, _) = ctx
+        .request("GET", "/api/tasks?include_system=true", Some(&cookie), None)
+        .await;
+    let id = task_id_by_name(&tasks, "unbestimmt");
+
+    let (status, body, _) = ctx
+        .request(
+            "POST",
+            "/api/entries",
+            Some(&cookie),
+            Some(json!({
+                "task_id": id,
+                "start_at": "2026-08-21T07:00:00Z",
+                "end_at": "2026-08-21T08:00:00Z"
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+}
+
+#[tokio::test]
+async fn update_entry_keeps_existing_system_task() {
+    let ctx = TestCtx::new().await;
+    let cookie = ctx.login("admin", "password1").await;
+    let (_, tasks, _) = ctx.request("GET", "/api/tasks", Some(&cookie), None).await;
+    let coding_id = task_id_by_name(&tasks, "Coding");
+    let (_, system_tasks, _) = ctx
+        .request("GET", "/api/tasks?include_system=true", Some(&cookie), None)
+        .await;
+    let unbestimmt_id = task_id_by_name(&system_tasks, "unbestimmt");
+
+    let (status, created, _) = ctx
+        .request(
+            "POST",
+            "/api/entries",
+            Some(&cookie),
+            Some(json!({
+                "task_id": coding_id,
+                "start_at": "2026-08-21T07:00:00Z",
+                "end_at": "2026-08-21T08:00:00Z"
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    let entry_id = created["id"].as_i64().expect("entry id");
+
+    let (status, _, _) = ctx
+        .request(
+            "DELETE",
+            &format!("/api/tasks/{coding_id}"),
+            Some(&cookie),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, updated, _) = ctx
+        .request(
+            "PATCH",
+            &format!("/api/entries/{entry_id}"),
+            Some(&cookie),
+            Some(json!({
+                "task_id": unbestimmt_id,
+                "start_at": "2026-08-21T07:00:00Z",
+                "end_at": "2026-08-21T09:00:00Z"
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{updated}");
+    assert_eq!(updated["task_id"], unbestimmt_id);
+    assert!(
+        updated["end_at"]
+            .as_str()
+            .is_some_and(|value| value.starts_with("2026-08-21T09:00:00"))
+    );
 }

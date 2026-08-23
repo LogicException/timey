@@ -183,7 +183,12 @@
 				<TimeField bind:hours={toH} bind:minutes={toM} label="Bis" />
 			</div>
 			<div class="grid gap-3 sm:grid-cols-2">
-				<NamedSelect label="Task" items={tasks} bind:value={taskId} />
+				<NamedSelect
+					label="Task"
+					items={tasks}
+					bind:value={taskId}
+					currentLabel={entries.find((entry) => entry.id === editing)?.task_name ?? null}
+				/>
 				<NamedSelect label="Projekt" items={projects} bind:value={projectId} optional />
 			</div>
 			{#if error}

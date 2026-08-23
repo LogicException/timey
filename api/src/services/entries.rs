@@ -97,7 +97,7 @@ pub async fn create_entry(
         ensure_no_needs_task(pool, user_id).await?;
     }
 
-    validate_refs(pool, user_id, input.task_id, input.project_id).await?;
+    validate_refs(pool, user_id, None, input.task_id, input.project_id).await?;
     ensure_same_day(input.start_at, end_at.unwrap_or(input.start_at))?;
     ensure_no_overlap(pool, user_id, None, input.start_at, end_at, now).await?;
 
@@ -133,7 +133,14 @@ pub async fn update_entry(
         }
     }
 
-    validate_refs(pool, user_id, input.task_id, input.project_id).await?;
+    validate_refs(
+        pool,
+        user_id,
+        existing.task_id,
+        input.task_id,
+        input.project_id,
+    )
+    .await?;
     ensure_same_day(input.start_at, end_at.unwrap_or(input.start_at))?;
     ensure_no_overlap(pool, user_id, Some(id), input.start_at, end_at, now).await?;
 
@@ -321,6 +328,7 @@ fn ensure_same_day(start: DateTime<Utc>, end: DateTime<Utc>) -> AppResult<()> {
 async fn validate_refs(
     pool: &SqlitePool,
     user_id: i64,
+    current_task_id: Option<i64>,
     task_id: Option<i64>,
     project_id: Option<i64>,
 ) -> AppResult<()> {
@@ -328,6 +336,11 @@ async fn validate_refs(
         let task = get_task(pool, user_id, task_id).await?;
         if task.archived {
             return Err(AppError::Unprocessable("Task ist archiviert".into()));
+        }
+        if task.is_system && current_task_id != Some(task_id) {
+            return Err(AppError::Unprocessable(
+                "interner Task kann nicht zugewiesen werden".into(),
+            ));
         }
     }
     if let Some(project_id) = project_id {

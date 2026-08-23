@@ -215,7 +215,12 @@
 				<TimeField bind:hours={fromH} bind:minutes={fromM} label="Von" />
 				<TimeField bind:hours={toH} bind:minutes={toM} label="Bis" />
 			</div>
-			<NamedSelect label="Task" items={tasks} bind:value={taskId} />
+			<NamedSelect
+				label="Task"
+				items={tasks}
+				bind:value={taskId}
+				currentLabel={editingId == null ? null : (entriesById.get(editingId)?.task_name ?? null)}
+			/>
 			<NamedSelect label="Projekt" items={projects} bind:value={projectId} optional />
 			{#if error}
 				<p class="text-sm text-stop">{error}</p>
