@@ -6,10 +6,12 @@
 	import { closeModalState, entryToForm, savePayload } from '$lib/day-entry';
 	import { addDays, formatBerlinDate, formatBerlinTime } from '$lib/dates';
 	import { durationBetween, formatHm, totalDurationSeconds } from '$lib/format';
-	import type { Entry, NamedItem } from '$lib/types';
+	import type { Entry, NamedItem, WorkDaySummary } from '$lib/types';
+	import { totalWorkSeconds } from '$lib/work-summary';
 
 	let day = $state(formatBerlinDate(new Date()));
 	let entries = $state<Entry[]>([]);
+	let workDays = $state<WorkDaySummary[]>([]);
 	let tasks = $state<NamedItem[]>([]);
 	let projects = $state<NamedItem[]>([]);
 	let error = $state('');
@@ -24,12 +26,14 @@
 	let open = $state(false);
 
 	async function load() {
-		const [entryRes, taskRes, projectRes] = await Promise.all([
+		const [entryRes, workRes, taskRes, projectRes] = await Promise.all([
 			api<Entry[]>(`/api/entries?from=${day}&to=${day}`),
+			api<WorkDaySummary[]>(`/api/work-sessions?from=${day}&to=${day}`),
 			api<NamedItem[]>('/api/tasks'),
 			api<NamedItem[]>('/api/projects')
 		]);
 		entries = entryRes;
+		workDays = workRes;
 		tasks = taskRes;
 		projects = projectRes;
 		if (taskId == null && tasks[0]) taskId = tasks[0].id;
@@ -167,6 +171,11 @@
 				<tr class="border-t border-line bg-panel-2">
 					<td class="px-4 py-2 text-xs uppercase tracking-wider text-muted" colspan="2">Summe</td>
 					<td class="clock-face px-4 py-2">{formatHm(totalDurationSeconds(entries))}</td>
+					<td colspan="3"></td>
+				</tr>
+				<tr class="border-t border-line bg-panel-2">
+					<td class="px-4 py-2 text-xs uppercase tracking-wider text-muted" colspan="2">Arbeitszeit</td>
+					<td class="clock-face px-4 py-2">{formatHm(totalWorkSeconds(workDays))}</td>
 					<td colspan="3"></td>
 				</tr>
 			</tfoot>

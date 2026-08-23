@@ -5,7 +5,7 @@ use timey_api::services::catalogs;
 use timey_api::services::users;
 
 #[tokio::test]
-async fn default_task_seed_fills_missing_names_without_duplicates() {
+async fn create_user_seeds_default_tasks_once() {
     let pool = db::connect("sqlite::memory:").await.expect("db");
     db::migrate(&pool).await.expect("migrate");
     let now = Utc
@@ -16,16 +16,7 @@ async fn default_task_seed_fills_missing_names_without_duplicates() {
         .await
         .expect("user");
 
-    sqlx::query("DELETE FROM tasks WHERE user_id = ? AND name = 'Feature'")
-        .bind(user.id)
-        .execute(&pool)
-        .await
-        .expect("delete");
-
-    catalogs::seed_default_tasks_for_all_users(&pool, now)
-        .await
-        .expect("reseed");
-    catalogs::seed_default_tasks_for_all_users(&pool, now)
+    catalogs::seed_default_tasks(&pool, user.id, now)
         .await
         .expect("second seed");
 
@@ -42,6 +33,42 @@ async fn default_task_seed_fills_missing_names_without_duplicates() {
 }
 
 #[tokio::test]
+async fn seed_does_not_recreate_deleted_default_task() {
+    let pool = db::connect("sqlite::memory:").await.expect("db");
+    db::migrate(&pool).await.expect("migrate");
+    let now = Utc
+        .with_ymd_and_hms(2026, 8, 21, 10, 0, 0)
+        .single()
+        .unwrap();
+    let user = users::create_user(&pool, "admin", "password1", Role::Admin, now)
+        .await
+        .expect("user");
+
+    let feature = catalogs::list_tasks(&pool, user.id, true, false)
+        .await
+        .expect("list")
+        .into_iter()
+        .find(|row| row.name == "Feature")
+        .expect("feature");
+    catalogs::delete_task(&pool, user.id, feature.id)
+        .await
+        .expect("delete");
+
+    catalogs::seed_default_tasks(&pool, user.id, now)
+        .await
+        .expect("reseed");
+
+    let names: Vec<_> = catalogs::list_tasks(&pool, user.id, true, false)
+        .await
+        .expect("list")
+        .iter()
+        .map(|row| row.name.clone())
+        .collect();
+    assert!(!names.iter().any(|name| name == "Feature"));
+    assert!(names.iter().any(|name| name == "Meeting"));
+}
+
+#[tokio::test]
 async fn seed_creates_exactly_one_unbestimmt_system_task() {
     let pool = db::connect("sqlite::memory:").await.expect("db");
     db::migrate(&pool).await.expect("migrate");
@@ -53,10 +80,10 @@ async fn seed_creates_exactly_one_unbestimmt_system_task() {
         .await
         .expect("user");
 
-    catalogs::seed_default_tasks_for_all_users(&pool, now)
+    catalogs::seed_default_tasks(&pool, user.id, now)
         .await
         .expect("reseed");
-    catalogs::seed_default_tasks_for_all_users(&pool, now)
+    catalogs::seed_default_tasks(&pool, user.id, now)
         .await
         .expect("second seed");
 

@@ -13,8 +13,15 @@
 		type RangePreset
 	} from '$lib/dates';
 	import { durationBetween, formatHm, totalDurationSeconds } from '$lib/format';
-	import { collapseSlices, groupEntryDurations, type ChartGroupBy } from '$lib/report-chart';
-	import type { Entry, NamedItem } from '$lib/types';
+	import { totalWorkSeconds } from '$lib/work-summary';
+	import {
+		collapseSlices,
+		groupEntryDurations,
+		groupEntryDurationsByProjectAndTask,
+		sanitizeChartGroupBy,
+		type ChartGroupBy
+	} from '$lib/report-chart';
+	import type { Entry, NamedItem, WorkDaySummary } from '$lib/types';
 
 	type ReportView = 'table' | 'bar' | 'pie';
 
@@ -26,7 +33,8 @@
 
 	const GROUP_LABELS: Record<ChartGroupBy, string> = {
 		task: 'Task',
-		project: 'Projekt'
+		project: 'Projekt',
+		project_task: 'Projekt + Task'
 	};
 
 	const today = formatBerlinDate(new Date());
@@ -34,6 +42,7 @@
 	let from = $state(today);
 	let to = $state(today);
 	let entries = $state<Entry[]>([]);
+	let workDays = $state<WorkDaySummary[]>([]);
 	let tasks = $state<NamedItem[]>([]);
 	let projects = $state<NamedItem[]>([]);
 	let selectedTasks = $state<number[]>([]);
@@ -42,8 +51,15 @@
 	let view = $state<ReportView>('table');
 	let groupBy = $state<ChartGroupBy>('task');
 
-	const slices = $derived(groupEntryDurations(entries, groupBy));
+	const flatGroupBy = $derived(groupBy === 'project_task' ? 'task' : groupBy);
+	const slices = $derived(groupEntryDurations(entries, flatGroupBy));
+	const nestedGroups = $derived(groupEntryDurationsByProjectAndTask(entries));
 	const pieSlices = $derived(collapseSlices(slices, 8));
+
+	function setView(next: ReportView) {
+		view = next;
+		groupBy = sanitizeChartGroupBy(next, groupBy);
+	}
 
 	function applyPreset(next: RangePreset) {
 		preset = next;
@@ -58,7 +74,12 @@
 		const params = new URLSearchParams({ from, to });
 		if (selectedTasks.length) params.set('task_ids', selectedTasks.join(','));
 		if (selectedProjects.length) params.set('project_ids', selectedProjects.join(','));
-		entries = await api(`/api/entries?${params}`);
+		const [entryRes, workRes] = await Promise.all([
+			api<Entry[]>(`/api/entries?${params}`),
+			api<WorkDaySummary[]>(`/api/work-sessions?from=${from}&to=${to}`)
+		]);
+		entries = entryRes;
+		workDays = workRes;
 	}
 
 	$effect(() => {
@@ -122,21 +143,35 @@
 			{#each Object.entries(VIEW_LABELS) as [key, label]}
 				<button
 					class="rounded-full px-3 py-1 text-sm {view === key ? 'bg-amber text-bg' : 'panel'}"
-					onclick={() => (view = key as ReportView)}>{label}</button
+					onclick={() => setView(key as ReportView)}
 				>
+					{label}
+				</button>
 			{/each}
 		</div>
 		{#if view !== 'table'}
 			<div class="flex flex-wrap items-center gap-2">
 				<span class="text-xs uppercase tracking-wider text-muted">Gruppierung</span>
 				{#each Object.entries(GROUP_LABELS) as [key, label]}
-					<button
-						class="rounded-full px-3 py-1 text-sm {groupBy === key ? 'bg-amber text-bg' : 'panel'}"
-						onclick={() => (groupBy = key as ChartGroupBy)}>{label}</button
-					>
+					{#if key !== 'project_task' || view === 'bar'}
+						<button
+							class="rounded-full px-3 py-1 text-sm {groupBy === key ? 'bg-amber text-bg' : 'panel'}"
+							onclick={() => (groupBy = key as ChartGroupBy)}>{label}</button
+						>
+					{/if}
 				{/each}
 			</div>
 		{/if}
+	</div>
+	<div class="flex flex-wrap gap-6 text-sm">
+		<div>
+			<p class="text-xs uppercase tracking-wider text-muted">Arbeitszeit</p>
+			<p class="clock-face">{formatHm(totalWorkSeconds(workDays))}</p>
+		</div>
+		<div>
+			<p class="text-xs uppercase tracking-wider text-muted">Gebucht</p>
+			<p class="clock-face">{formatHm(totalDurationSeconds(entries))}</p>
+		</div>
 	</div>
 	{#if view === 'table'}
 	<div class="panel overflow-hidden rounded-xl">
@@ -180,7 +215,11 @@
 		<p class="text-sm text-muted">Keine abgeschlossenen Einträge</p>
 	{:else if view === 'bar'}
 		<div class="panel overflow-hidden rounded-xl">
-			<BarChart {slices} />
+			{#if groupBy === 'project_task'}
+				<BarChart groups={nestedGroups} />
+			{:else}
+				<BarChart {slices} />
+			{/if}
 		</div>
 	{:else}
 		<div class="panel overflow-hidden rounded-xl">

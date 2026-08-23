@@ -24,8 +24,6 @@ async fn main() -> AppResult<()> {
     ) {
         users::bootstrap_admin(&pool, &username, &password, chrono::Utc::now()).await?;
     }
-    timey_api::services::catalogs::seed_default_tasks_for_all_users(&pool, chrono::Utc::now())
-        .await?;
 
     let bind = config.bind;
     let app =

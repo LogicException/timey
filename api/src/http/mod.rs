@@ -54,6 +54,7 @@ pub fn router(state: AppState) -> Router {
             "/api/entries/{id}",
             patch(entries::update_entry).delete(entries::delete_entry),
         )
+        .route("/api/work-sessions", get(work::list))
         .route("/api/work-sessions/current", get(work::current))
         .route("/api/work-sessions/start", post(work::start))
         .route("/api/work-sessions/pause", post(work::pause))

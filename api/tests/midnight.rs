@@ -1,7 +1,7 @@
 use chrono::{Duration, TimeZone, Utc};
 use timey_api::db;
 use timey_api::models::{EntryStatus, Role};
-use timey_api::services::{entries, midnight, users};
+use timey_api::services::{entries, midnight, users, work};
 
 #[tokio::test]
 async fn midnight_close_marks_running_entry_without_task() {
@@ -15,6 +15,7 @@ async fn midnight_close_marks_running_entry_without_task() {
         .await
         .expect("user");
 
+    work::start(&pool, user.id, start).await.expect("work");
     entries::start_timer(&pool, user.id, start)
         .await
         .expect("start");
