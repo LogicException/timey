@@ -3,6 +3,8 @@ import {
 	collapseSlices,
 	colorForIndex,
 	groupEntryDurations,
+	groupEntryDurationsByProjectAndTask,
+	sanitizeChartGroupBy,
 	slicesToArcs,
 	type ChartSlice
 } from './report-chart.ts';
@@ -167,6 +169,132 @@ describe('groupEntryDurations', () => {
 				'project'
 			)
 		).toEqual([]);
+	});
+});
+
+describe('groupEntryDurationsByProjectAndTask', () => {
+	it('groups tasks under projects and sorts by duration descending', () => {
+		expect(
+			groupEntryDurationsByProjectAndTask([
+				entry({
+					id: 1,
+					task_id: 3,
+					task_name: 'E-Mail',
+					project_id: 8,
+					project_name: 'Efa',
+					start_at: '2026-08-21T12:00:00Z',
+					end_at: '2026-08-21T13:00:00Z'
+				}),
+				entry({
+					id: 2,
+					task_id: 4,
+					task_name: 'Review',
+					project_id: 8,
+					project_name: 'Efa',
+					start_at: '2026-08-21T13:00:00Z',
+					end_at: '2026-08-21T13:30:00Z'
+				}),
+				entry({
+					id: 3,
+					task_id: 4,
+					task_name: 'Review',
+					project_id: 9,
+					project_name: 'Intern',
+					start_at: '2026-08-21T14:00:00Z',
+					end_at: '2026-08-21T14:10:00Z'
+				})
+			])
+		).toEqual([
+			{
+				key: 'project:8',
+				label: 'Efa',
+				seconds: 90 * 60,
+				bars: [
+					{ key: 'task:3', label: 'E-Mail', seconds: 60 * 60 },
+					{ key: 'task:4', label: 'Review', seconds: 30 * 60 }
+				]
+			},
+			{
+				key: 'project:9',
+				label: 'Intern',
+				seconds: 10 * 60,
+				bars: [{ key: 'task:4', label: 'Review', seconds: 10 * 60 }]
+			}
+		]);
+	});
+
+	it('keeps the same task in separate projects', () => {
+		const groups = groupEntryDurationsByProjectAndTask([
+			entry({
+				id: 1,
+				task_id: 4,
+				task_name: 'Review',
+				project_id: 8,
+				project_name: 'Efa',
+				start_at: '2026-08-21T12:00:00Z',
+				end_at: '2026-08-21T12:30:00Z'
+			}),
+			entry({
+				id: 2,
+				task_id: 4,
+				task_name: 'Review',
+				project_id: 9,
+				project_name: 'Intern',
+				start_at: '2026-08-21T13:00:00Z',
+				end_at: '2026-08-21T13:20:00Z'
+			})
+		]);
+		expect(groups.map((group) => group.bars.map((bar) => bar.key))).toEqual([
+			['task:4'],
+			['task:4']
+		]);
+		expect(groups.map((group) => group.key)).toEqual(['project:8', 'project:9']);
+	});
+
+	it('uses fallback labels for missing project or task names', () => {
+		expect(
+			groupEntryDurationsByProjectAndTask([
+				entry({
+					id: 1,
+					task_id: null,
+					task_name: null,
+					project_id: null,
+					project_name: null,
+					start_at: '2026-08-21T12:00:00Z',
+					end_at: '2026-08-21T12:20:00Z'
+				})
+			])
+		).toEqual([
+			{
+				key: 'project:none',
+				label: 'Ohne Projekt',
+				seconds: 20 * 60,
+				bars: [{ key: 'task:none', label: 'Ohne Task', seconds: 20 * 60 }]
+			}
+		]);
+	});
+
+	it('returns an empty list for running or empty entries', () => {
+		expect(groupEntryDurationsByProjectAndTask([])).toEqual([]);
+		expect(
+			groupEntryDurationsByProjectAndTask([entry({ id: 1, end_at: null, status: 'running' })])
+		).toEqual([]);
+	});
+});
+
+describe('sanitizeChartGroupBy', () => {
+	it('keeps project_task for the bar view', () => {
+		expect(sanitizeChartGroupBy('bar', 'project_task')).toBe('project_task');
+	});
+
+	it('falls back to task when leaving the bar view', () => {
+		expect(sanitizeChartGroupBy('pie', 'project_task')).toBe('task');
+		expect(sanitizeChartGroupBy('table', 'project_task')).toBe('task');
+	});
+
+	it('leaves task and project grouping unchanged', () => {
+		expect(sanitizeChartGroupBy('pie', 'project')).toBe('project');
+		expect(sanitizeChartGroupBy('bar', 'task')).toBe('task');
 	});
 });
 

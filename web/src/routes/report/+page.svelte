@@ -13,7 +13,13 @@
 		type RangePreset
 	} from '$lib/dates';
 	import { durationBetween, formatHm, totalDurationSeconds } from '$lib/format';
-	import { collapseSlices, groupEntryDurations, type ChartGroupBy } from '$lib/report-chart';
+	import {
+		collapseSlices,
+		groupEntryDurations,
+		groupEntryDurationsByProjectAndTask,
+		sanitizeChartGroupBy,
+		type ChartGroupBy
+	} from '$lib/report-chart';
 	import type { Entry, NamedItem } from '$lib/types';
 
 	type ReportView = 'table' | 'bar' | 'pie';
@@ -26,7 +32,8 @@
 
 	const GROUP_LABELS: Record<ChartGroupBy, string> = {
 		task: 'Task',
-		project: 'Projekt'
+		project: 'Projekt',
+		project_task: 'Projekt + Task'
 	};
 
 	const today = formatBerlinDate(new Date());
@@ -42,8 +49,15 @@
 	let view = $state<ReportView>('table');
 	let groupBy = $state<ChartGroupBy>('task');
 
-	const slices = $derived(groupEntryDurations(entries, groupBy));
+	const flatGroupBy = $derived(groupBy === 'project_task' ? 'task' : groupBy);
+	const slices = $derived(groupEntryDurations(entries, flatGroupBy));
+	const nestedGroups = $derived(groupEntryDurationsByProjectAndTask(entries));
 	const pieSlices = $derived(collapseSlices(slices, 8));
+
+	function setView(next: ReportView) {
+		view = next;
+		groupBy = sanitizeChartGroupBy(next, groupBy);
+	}
 
 	function applyPreset(next: RangePreset) {
 		preset = next;
@@ -122,18 +136,22 @@
 			{#each Object.entries(VIEW_LABELS) as [key, label]}
 				<button
 					class="rounded-full px-3 py-1 text-sm {view === key ? 'bg-amber text-bg' : 'panel'}"
-					onclick={() => (view = key as ReportView)}>{label}</button
+					onclick={() => setView(key as ReportView)}
 				>
+					{label}
+				</button>
 			{/each}
 		</div>
 		{#if view !== 'table'}
 			<div class="flex flex-wrap items-center gap-2">
 				<span class="text-xs uppercase tracking-wider text-muted">Gruppierung</span>
 				{#each Object.entries(GROUP_LABELS) as [key, label]}
-					<button
-						class="rounded-full px-3 py-1 text-sm {groupBy === key ? 'bg-amber text-bg' : 'panel'}"
-						onclick={() => (groupBy = key as ChartGroupBy)}>{label}</button
-					>
+					{#if key !== 'project_task' || view === 'bar'}
+						<button
+							class="rounded-full px-3 py-1 text-sm {groupBy === key ? 'bg-amber text-bg' : 'panel'}"
+							onclick={() => (groupBy = key as ChartGroupBy)}>{label}</button
+						>
+					{/if}
 				{/each}
 			</div>
 		{/if}
@@ -180,7 +198,11 @@
 		<p class="text-sm text-muted">Keine abgeschlossenen Einträge</p>
 	{:else if view === 'bar'}
 		<div class="panel overflow-hidden rounded-xl">
-			<BarChart {slices} />
+			{#if groupBy === 'project_task'}
+				<BarChart groups={nestedGroups} />
+			{:else}
+				<BarChart {slices} />
+			{/if}
 		</div>
 	{:else}
 		<div class="panel overflow-hidden rounded-xl">

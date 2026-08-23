@@ -1,12 +1,21 @@
 import { durationBetween } from './format.ts';
 import type { Entry } from './types.ts';
 
-export type ChartGroupBy = 'task' | 'project';
+export type ChartGroupBy = 'task' | 'project' | 'project_task';
+
+export type ReportChartView = 'table' | 'bar' | 'pie';
 
 export type ChartSlice = {
 	key: string;
 	label: string;
 	seconds: number;
+};
+
+export type ChartGroup = {
+	key: string;
+	label: string;
+	seconds: number;
+	bars: ChartSlice[];
 };
 
 export type ChartArcKind = 'arc' | 'full';
@@ -35,9 +44,16 @@ export function colorForIndex(index: number): string {
 	return CHART_COLORS[normalized] ?? CHART_COLORS[0];
 }
 
+export function sanitizeChartGroupBy(view: ReportChartView, groupBy: ChartGroupBy): ChartGroupBy {
+	if (view !== 'bar' && groupBy === 'project_task') {
+		return 'task';
+	}
+	return groupBy;
+}
+
 export function groupEntryDurations(
 	entries: ReadonlyArray<Entry>,
-	groupBy: ChartGroupBy
+	groupBy: Exclude<ChartGroupBy, 'project_task'>
 ): ChartSlice[] {
 	const totals = new Map<string, ChartSlice>();
 	for (const item of entries) {
@@ -54,7 +70,48 @@ export function groupEntryDurations(
 	return [...totals.values()].sort((left, right) => right.seconds - left.seconds);
 }
 
-function describeGroup(entry: Entry, groupBy: ChartGroupBy): { key: string; label: string } {
+export function groupEntryDurationsByProjectAndTask(
+	entries: ReadonlyArray<Entry>
+): ChartGroup[] {
+	type ProjectBucket = {
+		key: string;
+		label: string;
+		seconds: number;
+		bars: Map<string, ChartSlice>;
+	};
+	const projects = new Map<string, ProjectBucket>();
+	for (const item of entries) {
+		const seconds = durationBetween(item.start_at, item.end_at);
+		if (seconds <= 0) continue;
+		const project = describeGroup(item, 'project');
+		const task = describeGroup(item, 'task');
+		let bucket = projects.get(project.key);
+		if (!bucket) {
+			bucket = { key: project.key, label: project.label, seconds: 0, bars: new Map() };
+			projects.set(project.key, bucket);
+		}
+		bucket.seconds += seconds;
+		const existing = bucket.bars.get(task.key);
+		if (existing) {
+			existing.seconds += seconds;
+			continue;
+		}
+		bucket.bars.set(task.key, { ...task, seconds });
+	}
+	return [...projects.values()]
+		.map((bucket) => ({
+			key: bucket.key,
+			label: bucket.label,
+			seconds: bucket.seconds,
+			bars: [...bucket.bars.values()].sort((left, right) => right.seconds - left.seconds)
+		}))
+		.sort((left, right) => right.seconds - left.seconds);
+}
+
+function describeGroup(
+	entry: Entry,
+	groupBy: Exclude<ChartGroupBy, 'project_task'>
+): { key: string; label: string } {
 	if (groupBy === 'task') {
 		return {
 			key: entry.task_id === null ? 'task:none' : `task:${entry.task_id}`,
