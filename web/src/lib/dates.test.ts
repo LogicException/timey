@@ -6,6 +6,7 @@ import {
 	endOfWeek,
 	formatBerlinDate,
 	rangeForPreset,
+	showsManualDateFields,
 	startOfMonth,
 	startOfWeek
 } from './dates.ts';
@@ -48,6 +49,21 @@ describe('range presets', () => {
 			from: '2025-12-01',
 			to: '2025-12-31'
 		});
+	});
+});
+
+describe('showsManualDateFields', () => {
+	it('is true only for the custom preset', () => {
+		expect(showsManualDateFields('custom')).toBe(true);
+	});
+
+	it('is false for named presets', () => {
+		expect(showsManualDateFields('today')).toBe(false);
+		expect(showsManualDateFields('yesterday')).toBe(false);
+		expect(showsManualDateFields('this_week')).toBe(false);
+		expect(showsManualDateFields('last_week')).toBe(false);
+		expect(showsManualDateFields('this_month')).toBe(false);
+		expect(showsManualDateFields('last_month')).toBe(false);
 	});
 });
 

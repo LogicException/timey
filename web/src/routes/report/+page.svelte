@@ -9,6 +9,7 @@
 		formatBerlinTime,
 		PRESET_LABELS,
 		rangeForPreset,
+		showsManualDateFields,
 		type RangePreset
 	} from '$lib/dates';
 	import { durationBetween, formatHm, totalDurationSeconds } from '$lib/format';
@@ -98,8 +99,10 @@
 		{/each}
 	</div>
 	<div class="flex flex-wrap gap-4">
-		<div class="w-52"><DateField bind:value={from} label="Von" /></div>
-		<div class="w-52"><DateField bind:value={to} label="Bis" /></div>
+		{#if showsManualDateFields(preset)}
+			<div class="w-52"><DateField bind:value={from} label="Von" /></div>
+			<div class="w-52"><DateField bind:value={to} label="Bis" /></div>
+		{/if}
 		<button class="self-end rounded-md bg-amber px-4 py-2 text-sm text-bg" onclick={exportCsv}>CSV exportieren</button>
 	</div>
 	<div class="grid gap-4 md:grid-cols-2">

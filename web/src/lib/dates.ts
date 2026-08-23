@@ -116,6 +116,10 @@ export function rangeForPreset(preset: RangePreset, today: string): DateRange {
 	}
 }
 
+export function showsManualDateFields(preset: RangePreset): boolean {
+	return preset === 'custom';
+}
+
 export const PRESET_LABELS: Record<RangePreset, string> = {
 	today: 'Heute',
 	yesterday: 'Gestern',
