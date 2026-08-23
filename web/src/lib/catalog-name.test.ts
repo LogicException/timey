@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isReservedTaskName, renameIfChanged } from './catalog-name.ts';
+import { deleteTaskConfirmText, isReservedTaskName, renameIfChanged } from './catalog-name.ts';
 
 describe('renameIfChanged', () => {
 	it('returns the trimmed name when it changed', () => {
@@ -23,5 +23,14 @@ describe('isReservedTaskName', () => {
 		expect(isReservedTaskName('UNBESTIMMT')).toBe(true);
 		expect(isReservedTaskName('Meeting')).toBe(false);
 		expect(isReservedTaskName('')).toBe(false);
+	});
+});
+
+describe('deleteTaskConfirmText', () => {
+	it('names the task and explains reassignment of existing entries', () => {
+		const text = deleteTaskConfirmText('Coding');
+		expect(text).toContain('Coding');
+		expect(text).toContain('unbestimmt');
+		expect(text.toLowerCase()).toContain('einträge');
 	});
 });

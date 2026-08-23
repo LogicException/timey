@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { api } from '$lib/api';
-	import { isReservedTaskName, renameIfChanged } from '$lib/catalog-name';
+	import { deleteTaskConfirmText, isReservedTaskName, renameIfChanged } from '$lib/catalog-name';
 	import type { NamedItem } from '$lib/types';
 
 	let tasks = $state<NamedItem[]>([]);
@@ -9,6 +9,7 @@
 	let editingId = $state<number | null>(null);
 	let draft = $state('');
 	let skipBlur = $state(false);
+	let pendingDelete = $state<NamedItem | null>(null);
 
 	async function load() {
 		tasks = await api('/api/tasks?include_archived=true');
@@ -41,10 +42,18 @@
 		await load();
 	}
 
-	async function remove(item: NamedItem) {
-		if (!confirm('Einträge werden auf „unbestimmt“ umgebucht.')) {
-			return;
-		}
+	function requestDelete(item: NamedItem) {
+		pendingDelete = item;
+	}
+
+	function cancelDelete() {
+		pendingDelete = null;
+	}
+
+	async function confirmDelete() {
+		const item = pendingDelete;
+		if (item == null) return;
+		pendingDelete = null;
 		error = '';
 		try {
 			await api(`/api/tasks/${item.id}`, { method: 'DELETE' });
@@ -144,7 +153,7 @@
 					<button class="text-xs text-muted" onclick={() => archive(item)}
 						>{item.archived ? 'Reaktivieren' : 'Archivieren'}</button
 					>
-					<button class="text-xs text-stop" onclick={() => void remove(item)}>Löschen</button>
+					<button class="text-xs text-stop" onclick={() => requestDelete(item)}>Löschen</button>
 				</div>
 			</li>
 		{/each}
@@ -152,4 +161,18 @@
 </section>
 {#if error}
 	<p class="mt-3 text-sm text-stop">{error}</p>
+{/if}
+{#if pendingDelete}
+	<div class="fixed inset-0 z-30 flex items-center justify-center bg-black/50 p-4">
+		<div class="panel w-full max-w-md space-y-3 rounded-xl p-5">
+			<h2 class="text-lg">Task löschen</h2>
+			<p class="text-sm">{deleteTaskConfirmText(pendingDelete.name)}</p>
+			<div class="flex justify-end gap-2">
+				<button class="px-3 py-2 text-sm text-muted" onclick={cancelDelete}>Abbrechen</button>
+				<button class="rounded-md bg-stop px-4 py-2 text-sm text-bg" onclick={() => void confirmDelete()}
+					>Löschen</button
+				>
+			</div>
+		</div>
+	</div>
 {/if}
