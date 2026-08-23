@@ -21,15 +21,22 @@ pub async fn seed_default_tasks(
     now: DateTime<Utc>,
 ) -> AppResult<()> {
     let created_at = now.to_rfc3339();
-    for name in DEFAULT_TASKS {
-        sqlx::query(
-            "INSERT OR IGNORE INTO tasks (user_id, name, archived, created_at) VALUES (?, ?, 0, ?)",
-        )
-        .bind(user_id)
-        .bind(name)
-        .bind(&created_at)
-        .execute(pool)
-        .await?;
+    let existing: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM tasks WHERE user_id = ? AND is_system = 0")
+            .bind(user_id)
+            .fetch_one(pool)
+            .await?;
+    if existing == 0 {
+        for name in DEFAULT_TASKS {
+            sqlx::query(
+                "INSERT OR IGNORE INTO tasks (user_id, name, archived, created_at) VALUES (?, ?, 0, ?)",
+            )
+            .bind(user_id)
+            .bind(name)
+            .bind(&created_at)
+            .execute(pool)
+            .await?;
+        }
     }
     seed_unbestimmt(pool, user_id, &created_at).await
 }
@@ -48,19 +55,6 @@ async fn seed_unbestimmt(pool: &SqlitePool, user_id: i64, created_at: &str) -> A
     .bind(created_at)
     .execute(pool)
     .await?;
-    Ok(())
-}
-
-pub async fn seed_default_tasks_for_all_users(
-    pool: &SqlitePool,
-    now: DateTime<Utc>,
-) -> AppResult<()> {
-    let user_ids: Vec<i64> = sqlx::query_scalar("SELECT id FROM users")
-        .fetch_all(pool)
-        .await?;
-    for user_id in user_ids {
-        seed_default_tasks(pool, user_id, now).await?;
-    }
     Ok(())
 }
 
