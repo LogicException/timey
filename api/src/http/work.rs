@@ -34,9 +34,16 @@ impl From<WorkSnapshot> for WorkView {
 }
 
 #[derive(Serialize)]
+pub struct WorkIntervalView {
+    start_at: String,
+    end_at: String,
+}
+
+#[derive(Serialize)]
 pub struct WorkDayView {
     local_date: String,
     elapsed_seconds: i64,
+    intervals: Vec<WorkIntervalView>,
 }
 
 pub async fn list(
@@ -51,6 +58,14 @@ pub async fn list(
             .map(|day| WorkDayView {
                 local_date: day.local_date.format("%Y-%m-%d").to_string(),
                 elapsed_seconds: day.elapsed_seconds,
+                intervals: day
+                    .intervals
+                    .into_iter()
+                    .map(|interval| WorkIntervalView {
+                        start_at: interval.start.to_rfc3339(),
+                        end_at: interval.end.to_rfc3339(),
+                    })
+                    .collect(),
             })
             .collect(),
     ))

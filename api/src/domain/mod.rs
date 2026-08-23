@@ -12,4 +12,4 @@ pub use overlap::{
     Interval, any_contains_instant, any_overlap, contains_instant, intervals_overlap,
 };
 pub use same_day::{APP_TZ, civil_date, same_civil_day};
-pub use work_duration::{WorkEvent, WorkEventKind, elapsed_seconds};
+pub use work_duration::{WorkEvent, WorkEventKind, elapsed_seconds, running_intervals};

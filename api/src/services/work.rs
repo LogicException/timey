@@ -1,7 +1,7 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use sqlx::SqlitePool;
 
-use crate::domain::{APP_TZ, WorkEvent, WorkEventKind, elapsed_seconds};
+use crate::domain::{APP_TZ, Interval, WorkEvent, WorkEventKind, running_intervals};
 use crate::error::{AppError, AppResult};
 use crate::models::{WorkEventRow, WorkSessionRow, WorkSessionStatus, parse_date, parse_rfc3339};
 use crate::services::entries::today;
@@ -15,6 +15,7 @@ pub struct WorkSnapshot {
 pub struct WorkDaySummary {
     pub local_date: NaiveDate,
     pub elapsed_seconds: i64,
+    pub intervals: Vec<Interval>,
 }
 
 pub async fn current(
@@ -54,9 +55,11 @@ pub async fn list_for_range(
     let dates = session_dates_in(pool, user_id, from, to).await?;
     let mut days = Vec::with_capacity(dates.len());
     for date in dates {
+        let intervals = intervals_on(pool, user_id, date, now).await?;
         days.push(WorkDaySummary {
             local_date: date,
-            elapsed_seconds: elapsed_on(pool, user_id, date, now).await?,
+            elapsed_seconds: elapsed_from(&intervals),
+            intervals,
         });
     }
     Ok(days)
@@ -68,13 +71,31 @@ pub async fn elapsed_on(
     local_date: NaiveDate,
     now: DateTime<Utc>,
 ) -> AppResult<i64> {
+    let intervals = intervals_on(pool, user_id, local_date, now).await?;
+    Ok(elapsed_from(&intervals))
+}
+
+fn elapsed_from(intervals: &[Interval]) -> i64 {
+    intervals
+        .iter()
+        .map(|interval| (interval.end - interval.start).num_seconds())
+        .sum::<i64>()
+        .max(0)
+}
+
+async fn intervals_on(
+    pool: &SqlitePool,
+    user_id: i64,
+    local_date: NaiveDate,
+    now: DateTime<Utc>,
+) -> AppResult<Vec<Interval>> {
     let sessions = sessions_on(pool, user_id, local_date).await?;
-    let mut total = 0;
+    let mut intervals = Vec::new();
     for session in &sessions {
         let events = events_for(pool, session.id).await?;
-        total += elapsed_seconds(&events, now);
+        intervals.extend(running_intervals(&events, now));
     }
-    Ok(total)
+    Ok(intervals)
 }
 
 pub async fn start(pool: &SqlitePool, user_id: i64, now: DateTime<Utc>) -> AppResult<WorkSnapshot> {

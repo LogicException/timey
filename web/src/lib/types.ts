@@ -42,9 +42,15 @@ export type WorkSnapshot = {
 	elapsed_seconds: number;
 };
 
+export type WorkInterval = {
+	start_at: string;
+	end_at: string;
+};
+
 export type WorkDaySummary = {
 	local_date: string;
 	elapsed_seconds: number;
+	intervals?: WorkInterval[];
 };
 
 export type ApiError = {
