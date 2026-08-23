@@ -9,6 +9,7 @@ export type User = {
 export type UserSettings = {
 	work_start: string;
 	work_end: string;
+	default_view: 'day' | 'week';
 };
 
 export type AuthConfig = {

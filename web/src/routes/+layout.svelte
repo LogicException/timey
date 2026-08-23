@@ -75,7 +75,7 @@
 				<h1 class="text-3xl font-bold">Timey</h1>
 			</div>
 			<nav class="flex flex-wrap gap-3 text-sm text-muted">
-				<a href="/" class="hover:text-ink">Tag</a>
+				<a href="/day" class="hover:text-ink">Tag</a>
 				<a href="/week" class="hover:text-ink">Woche</a>
 				<a href="/report" class="hover:text-ink">Auswertung</a>
 				<a href="/projects" class="hover:text-ink">Projekte</a>

@@ -22,11 +22,12 @@ async fn get_or_default_inserts_missing_row() {
         .await
         .expect("delete");
 
-    let hours = settings::get_or_default(&pool, user.id)
+    let loaded = settings::get_or_default(&pool, user.id)
         .await
         .expect("defaults");
-    assert_eq!(hours.work_start(), "07:30");
-    assert_eq!(hours.work_end(), "16:15");
+    assert_eq!(loaded.hours.work_start(), "07:30");
+    assert_eq!(loaded.hours.work_end(), "16:15");
+    assert_eq!(loaded.default_view, timey_api::domain::DefaultView::Day);
 
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM user_settings WHERE user_id = ?")
         .bind(user.id)

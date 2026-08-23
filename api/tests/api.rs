@@ -483,6 +483,7 @@ async fn settings_default_after_login() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["work_start"], "07:30");
     assert_eq!(body["work_end"], "16:15");
+    assert_eq!(body["default_view"], "day");
 }
 
 #[tokio::test]
@@ -503,13 +504,15 @@ async fn settings_patch_roundtrip() {
             Some(&cookie),
             Some(json!({
                 "work_start": "08:00",
-                "work_end": "17:00"
+                "work_end": "17:00",
+                "default_view": "week"
             })),
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["work_start"], "08:00");
     assert_eq!(body["work_end"], "17:00");
+    assert_eq!(body["default_view"], "week");
 
     let (status, body, _) = ctx
         .request("GET", "/api/settings", Some(&cookie), None)
@@ -517,6 +520,7 @@ async fn settings_patch_roundtrip() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["work_start"], "08:00");
     assert_eq!(body["work_end"], "17:00");
+    assert_eq!(body["default_view"], "week");
 }
 
 #[tokio::test]
@@ -596,4 +600,60 @@ async fn settings_are_isolated_per_user() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["work_start"], "07:30");
     assert_eq!(body["work_end"], "16:15");
+    assert_eq!(body["default_view"], "day");
+}
+
+#[tokio::test]
+async fn settings_patch_rejects_invalid_default_view() {
+    let ctx = TestCtx::new().await;
+    let cookie = ctx.login("admin", "password1").await;
+    let (status, body, _) = ctx
+        .request(
+            "PATCH",
+            "/api/settings",
+            Some(&cookie),
+            Some(json!({
+                "work_start": "08:00",
+                "work_end": "17:00",
+                "default_view": "month"
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["error"], "Standardansicht muss day oder week sein");
+}
+
+#[tokio::test]
+async fn settings_patch_without_default_view_keeps_stored_value() {
+    let ctx = TestCtx::new().await;
+    let cookie = ctx.login("admin", "password1").await;
+    let (status, _, _) = ctx
+        .request(
+            "PATCH",
+            "/api/settings",
+            Some(&cookie),
+            Some(json!({
+                "work_start": "08:00",
+                "work_end": "17:00",
+                "default_view": "week"
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, body, _) = ctx
+        .request(
+            "PATCH",
+            "/api/settings",
+            Some(&cookie),
+            Some(json!({
+                "work_start": "09:00",
+                "work_end": "18:00"
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["work_start"], "09:00");
+    assert_eq!(body["work_end"], "18:00");
+    assert_eq!(body["default_view"], "week");
 }
