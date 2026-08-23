@@ -12,6 +12,11 @@ pub struct WorkSnapshot {
     pub local_date: NaiveDate,
 }
 
+pub struct WorkDaySummary {
+    pub local_date: NaiveDate,
+    pub elapsed_seconds: i64,
+}
+
 pub async fn current(
     pool: &SqlitePool,
     user_id: i64,
@@ -24,17 +29,52 @@ pub async fn current(
         .find(|row| row.status != WorkSessionStatus::Stopped.as_str())
         .cloned();
 
+    let elapsed_seconds = elapsed_on(pool, user_id, local_date, now).await?;
+
+    Ok(WorkSnapshot {
+        session: open,
+        elapsed_seconds,
+        local_date,
+    })
+}
+
+pub async fn list_for_range(
+    pool: &SqlitePool,
+    user_id: i64,
+    from: NaiveDate,
+    to: NaiveDate,
+    now: DateTime<Utc>,
+) -> AppResult<Vec<WorkDaySummary>> {
+    if to < from {
+        return Err(AppError::Unprocessable(
+            "Endedatum darf nicht vor dem Startdatum liegen".into(),
+        ));
+    }
+
+    let dates = session_dates_in(pool, user_id, from, to).await?;
+    let mut days = Vec::with_capacity(dates.len());
+    for date in dates {
+        days.push(WorkDaySummary {
+            local_date: date,
+            elapsed_seconds: elapsed_on(pool, user_id, date, now).await?,
+        });
+    }
+    Ok(days)
+}
+
+pub async fn elapsed_on(
+    pool: &SqlitePool,
+    user_id: i64,
+    local_date: NaiveDate,
+    now: DateTime<Utc>,
+) -> AppResult<i64> {
+    let sessions = sessions_on(pool, user_id, local_date).await?;
     let mut total = 0;
     for session in &sessions {
         let events = events_for(pool, session.id).await?;
         total += elapsed_seconds(&events, now);
     }
-
-    Ok(WorkSnapshot {
-        session: open,
-        elapsed_seconds: total,
-        local_date,
-    })
+    Ok(total)
 }
 
 pub async fn start(pool: &SqlitePool, user_id: i64, now: DateTime<Utc>) -> AppResult<WorkSnapshot> {
@@ -66,7 +106,24 @@ pub async fn start(pool: &SqlitePool, user_id: i64, now: DateTime<Utc>) -> AppRe
     current(pool, user_id, now).await
 }
 
+pub async fn require_running(
+    pool: &SqlitePool,
+    user_id: i64,
+    now: DateTime<Utc>,
+) -> AppResult<()> {
+    let local_date = today(now);
+    let session = open_session(pool, user_id, local_date).await?;
+    match session
+        .as_ref()
+        .and_then(|row| WorkSessionStatus::parse(&row.status))
+    {
+        Some(WorkSessionStatus::Running) => Ok(()),
+        _ => Err(AppError::Unprocessable("Arbeitszeit läuft nicht".into())),
+    }
+}
+
 pub async fn pause(pool: &SqlitePool, user_id: i64, now: DateTime<Utc>) -> AppResult<WorkSnapshot> {
+    reject_if_entry_running(pool, user_id).await?;
     let session = require_status(pool, user_id, now, WorkSessionStatus::Running).await?;
     set_status(pool, session.id, WorkSessionStatus::Paused).await?;
     insert_event(pool, session.id, WorkEventKind::Paused, now).await?;
@@ -85,6 +142,7 @@ pub async fn resume(
 }
 
 pub async fn stop(pool: &SqlitePool, user_id: i64, now: DateTime<Utc>) -> AppResult<WorkSnapshot> {
+    reject_if_entry_running(pool, user_id).await?;
     let local_date = today(now);
     let session = open_session(pool, user_id, local_date)
         .await?
@@ -117,6 +175,18 @@ pub async fn close_if_stale(pool: &SqlitePool, user_id: i64, now: DateTime<Utc>)
             insert_event(pool, row.id, WorkEventKind::Stopped, close_at).await?;
         }
         set_status(pool, row.id, WorkSessionStatus::Stopped).await?;
+    }
+    Ok(())
+}
+
+async fn reject_if_entry_running(pool: &SqlitePool, user_id: i64) -> AppResult<()> {
+    if crate::services::entries::running_entry(pool, user_id)
+        .await?
+        .is_some()
+    {
+        return Err(AppError::Unprocessable(
+            "Zuerst den laufenden Eintrag stoppen".into(),
+        ));
     }
     Ok(())
 }
@@ -154,6 +224,32 @@ async fn open_session(
     .bind(local_date.format("%Y-%m-%d").to_string())
     .fetch_optional(pool)
     .await?)
+}
+
+async fn session_dates_in(
+    pool: &SqlitePool,
+    user_id: i64,
+    from: NaiveDate,
+    to: NaiveDate,
+) -> AppResult<Vec<NaiveDate>> {
+    let rows = sqlx::query_scalar::<_, String>(
+        "SELECT DISTINCT local_date FROM work_sessions
+         WHERE user_id = ? AND local_date >= ? AND local_date <= ?
+         ORDER BY local_date",
+    )
+    .bind(user_id)
+    .bind(from.format("%Y-%m-%d").to_string())
+    .bind(to.format("%Y-%m-%d").to_string())
+    .fetch_all(pool)
+    .await?;
+
+    let mut dates = Vec::with_capacity(rows.len());
+    for row in rows {
+        dates.push(
+            parse_date(&row).map_err(|_| AppError::Internal("local_date ungültig".into()))?,
+        );
+    }
+    Ok(dates)
 }
 
 async fn sessions_on(

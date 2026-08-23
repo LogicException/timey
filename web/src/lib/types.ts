@@ -42,6 +42,11 @@ export type WorkSnapshot = {
 	elapsed_seconds: number;
 };
 
+export type WorkDaySummary = {
+	local_date: string;
+	elapsed_seconds: number;
+};
+
 export type ApiError = {
 	error: string;
 };

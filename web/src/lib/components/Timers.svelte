@@ -2,6 +2,7 @@
 	import { api } from '$lib/api';
 	import { formatWorkDuration } from '$lib/format';
 	import type { Entry, NamedItem, WorkSnapshot } from '$lib/types';
+	import { workAllowsTimer } from '$lib/work-summary';
 	import NamedSelect from './NamedSelect.svelte';
 
 	let {
@@ -134,8 +135,10 @@
 		</div>
 		<div class="ml-auto flex items-center gap-2">
 			{#if !timer}
-				<button class="rounded-full bg-go px-4 py-2 text-sm font-semibold text-bg" onclick={startTimer}
-					>Neuer Eintrag</button
+				<button
+					class="rounded-full bg-go px-4 py-2 text-sm font-semibold text-bg disabled:cursor-not-allowed disabled:opacity-40"
+					onclick={startTimer}
+					disabled={!workAllowsTimer(work)}>Neuer Eintrag</button
 				>
 			{/if}
 		</div>

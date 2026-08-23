@@ -178,6 +178,7 @@ pub async fn start_timer(
     user_id: i64,
     now: DateTime<Utc>,
 ) -> AppResult<EntryRow> {
+    crate::services::work::require_running(pool, user_id, now).await?;
     create_entry(
         pool,
         user_id,

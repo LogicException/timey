@@ -13,6 +13,7 @@
 		type RangePreset
 	} from '$lib/dates';
 	import { durationBetween, formatHm, totalDurationSeconds } from '$lib/format';
+	import { totalWorkSeconds } from '$lib/work-summary';
 	import {
 		collapseSlices,
 		groupEntryDurations,
@@ -20,7 +21,7 @@
 		sanitizeChartGroupBy,
 		type ChartGroupBy
 	} from '$lib/report-chart';
-	import type { Entry, NamedItem } from '$lib/types';
+	import type { Entry, NamedItem, WorkDaySummary } from '$lib/types';
 
 	type ReportView = 'table' | 'bar' | 'pie';
 
@@ -41,6 +42,7 @@
 	let from = $state(today);
 	let to = $state(today);
 	let entries = $state<Entry[]>([]);
+	let workDays = $state<WorkDaySummary[]>([]);
 	let tasks = $state<NamedItem[]>([]);
 	let projects = $state<NamedItem[]>([]);
 	let selectedTasks = $state<number[]>([]);
@@ -72,7 +74,12 @@
 		const params = new URLSearchParams({ from, to });
 		if (selectedTasks.length) params.set('task_ids', selectedTasks.join(','));
 		if (selectedProjects.length) params.set('project_ids', selectedProjects.join(','));
-		entries = await api(`/api/entries?${params}`);
+		const [entryRes, workRes] = await Promise.all([
+			api<Entry[]>(`/api/entries?${params}`),
+			api<WorkDaySummary[]>(`/api/work-sessions?from=${from}&to=${to}`)
+		]);
+		entries = entryRes;
+		workDays = workRes;
 	}
 
 	$effect(() => {
@@ -155,6 +162,16 @@
 				{/each}
 			</div>
 		{/if}
+	</div>
+	<div class="flex flex-wrap gap-6 text-sm">
+		<div>
+			<p class="text-xs uppercase tracking-wider text-muted">Arbeitszeit</p>
+			<p class="clock-face">{formatHm(totalWorkSeconds(workDays))}</p>
+		</div>
+		<div>
+			<p class="text-xs uppercase tracking-wider text-muted">Gebucht</p>
+			<p class="clock-face">{formatHm(totalDurationSeconds(entries))}</p>
+		</div>
 	</div>
 	{#if view === 'table'}
 	<div class="panel overflow-hidden rounded-xl">
