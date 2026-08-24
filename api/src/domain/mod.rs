@@ -1,5 +1,6 @@
 pub mod default_view;
 pub mod midnight;
+pub mod minute;
 pub mod overlap;
 pub mod same_day;
 pub mod system_task;
@@ -8,6 +9,7 @@ pub mod working_hours;
 
 pub use default_view::DefaultView;
 pub use midnight::{close_timestamp, needs_midnight_close};
+pub use minute::truncate_to_minute;
 pub use overlap::{
     Interval, any_contains_instant, any_overlap, contains_instant, intervals_overlap,
 };

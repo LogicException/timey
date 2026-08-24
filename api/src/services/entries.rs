@@ -1,8 +1,9 @@
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Duration, NaiveDate, Utc};
 use sqlx::SqlitePool;
 
 use crate::domain::{
     APP_TZ, Interval, any_contains_instant, any_overlap, civil_date, same_civil_day,
+    truncate_to_minute,
 };
 use crate::error::{AppError, AppResult};
 use crate::models::{EntryRow, EntryStatus, parse_rfc3339};
@@ -205,6 +206,10 @@ pub async fn stop_timer(
         .ok_or_else(|| AppError::Unprocessable("Kein laufender Eintrag".into()))?;
     let start = parse_rfc3339(&running.start_at)
         .map_err(|_| AppError::Internal("Startzeit ungültig".into()))?;
+    let mut end = truncate_to_minute(now);
+    if end <= start {
+        end = truncate_to_minute(start) + Duration::minutes(1);
+    }
     update_entry(
         pool,
         user_id,
@@ -213,7 +218,7 @@ pub async fn stop_timer(
             task_id: Some(task_id),
             project_id,
             start_at: start,
-            end_at: Some(now),
+            end_at: Some(end),
         },
         now,
     )
