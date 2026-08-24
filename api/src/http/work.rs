@@ -1,8 +1,9 @@
 use axum::Json;
-use axum::extract::{Query, State};
-use chrono::{NaiveDate, Utc};
+use axum::extract::{Path, Query, State};
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
+use crate::domain::LabeledInterval;
 use crate::error::AppResult;
 use crate::http::extractors::CurrentUser;
 use crate::services::work::{self, WorkSnapshot};
@@ -35,8 +36,21 @@ impl From<WorkSnapshot> for WorkView {
 
 #[derive(Serialize)]
 pub struct WorkIntervalView {
+    id: i64,
     start_at: String,
     end_at: String,
+    open: bool,
+}
+
+impl From<&LabeledInterval> for WorkIntervalView {
+    fn from(interval: &LabeledInterval) -> Self {
+        Self {
+            id: interval.id,
+            start_at: interval.start.to_rfc3339(),
+            end_at: interval.end.to_rfc3339(),
+            open: interval.open,
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -58,14 +72,7 @@ pub async fn list(
             .map(|day| WorkDayView {
                 local_date: day.local_date.format("%Y-%m-%d").to_string(),
                 elapsed_seconds: day.elapsed_seconds,
-                intervals: day
-                    .intervals
-                    .into_iter()
-                    .map(|interval| WorkIntervalView {
-                        start_at: interval.start.to_rfc3339(),
-                        end_at: interval.end.to_rfc3339(),
-                    })
-                    .collect(),
+                intervals: day.intervals.iter().map(WorkIntervalView::from).collect(),
             })
             .collect(),
     ))
@@ -97,4 +104,53 @@ pub async fn resume(user: CurrentUser, State(state): State<AppState>) -> AppResu
 pub async fn stop(user: CurrentUser, State(state): State<AppState>) -> AppResult<Json<WorkView>> {
     let snap = work::stop(&state.pool, user.id, Utc::now()).await?;
     Ok(Json(WorkView::from(snap)))
+}
+
+#[derive(Deserialize)]
+pub struct CreateIntervalBody {
+    start_at: DateTime<Utc>,
+    end_at: DateTime<Utc>,
+}
+
+#[derive(Deserialize)]
+pub struct PatchIntervalBody {
+    start_at: DateTime<Utc>,
+    end_at: Option<DateTime<Utc>>,
+}
+
+pub async fn create_interval(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Json(body): Json<CreateIntervalBody>,
+) -> AppResult<Json<WorkIntervalView>> {
+    let interval =
+        work::create_interval(&state.pool, user.id, body.start_at, body.end_at, Utc::now()).await?;
+    Ok(Json(WorkIntervalView::from(&interval)))
+}
+
+pub async fn update_interval(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Json(body): Json<PatchIntervalBody>,
+) -> AppResult<Json<WorkIntervalView>> {
+    let interval = work::update_interval(
+        &state.pool,
+        user.id,
+        id,
+        body.start_at,
+        body.end_at,
+        Utc::now(),
+    )
+    .await?;
+    Ok(Json(WorkIntervalView::from(&interval)))
+}
+
+pub async fn delete_interval(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> AppResult<Json<serde_json::Value>> {
+    work::delete_interval(&state.pool, user.id, id, Utc::now()).await?;
+    Ok(Json(serde_json::json!({ "ok": true })))
 }

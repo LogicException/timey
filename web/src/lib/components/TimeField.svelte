@@ -2,11 +2,13 @@
 	let {
 		hours = $bindable(),
 		minutes = $bindable(),
-		label = 'Uhrzeit'
+		label = 'Uhrzeit',
+		disabled = false
 	}: {
 		hours: number;
 		minutes: number;
 		label?: string;
+		disabled?: boolean;
 	} = $props();
 
 	function clamp(value: number, max: number): number {
@@ -34,13 +36,14 @@
 
 <div>
 	<p class="mb-1 text-xs uppercase tracking-[0.18em] text-muted">{label}</p>
-	<div class="panel flex items-center gap-1 rounded-md px-2 py-1">
-		<button type="button" class="px-1 text-muted" onclick={() => bumpHours(-1)}>−</button>
+	<div class="panel flex items-center gap-1 rounded-md px-2 py-1 {disabled ? 'opacity-40' : ''}">
+		<button type="button" class="px-1 text-muted" onclick={() => bumpHours(-1)} {disabled}>−</button>
 		<input
 			class="clock-face w-10 bg-transparent text-center text-lg outline-none"
 			type="text"
 			inputmode="numeric"
 			value={String(hours).padStart(2, '0')}
+			{disabled}
 			oninput={(event) => {
 				hours = clamp(Number((event.currentTarget as HTMLInputElement).value), 23);
 			}}
@@ -51,12 +54,13 @@
 			type="text"
 			inputmode="numeric"
 			value={String(minutes).padStart(2, '0')}
+			{disabled}
 			oninput={(event) => {
 				minutes = clamp(Number((event.currentTarget as HTMLInputElement).value), 59);
 			}}
 		/>
-		<button type="button" class="px-1 text-muted" onclick={() => bumpHours(1)}>+</button>
-		<button type="button" class="ml-1 text-xs text-muted" onclick={() => bumpMinutes(-1)}>−1m</button>
-		<button type="button" class="text-xs text-muted" onclick={() => bumpMinutes(1)}>+1m</button>
+		<button type="button" class="px-1 text-muted" onclick={() => bumpHours(1)} {disabled}>+</button>
+		<button type="button" class="ml-1 text-xs text-muted" onclick={() => bumpMinutes(-1)} {disabled}>−1m</button>
+		<button type="button" class="text-xs text-muted" onclick={() => bumpMinutes(1)} {disabled}>+1m</button>
 	</div>
 </div>

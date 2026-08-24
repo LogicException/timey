@@ -1,7 +1,11 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use sqlx::SqlitePool;
 
-use crate::domain::{APP_TZ, Interval, WorkEvent, WorkEventKind, running_intervals};
+use crate::domain::{
+    APP_TZ, Interval, LabeledInterval, WorkEventKind, WorkEventRecord, any_overlap, civil_date,
+    labeled_intervals, remove_interval, same_civil_day, timestamps_non_decreasing,
+    truncate_to_minute,
+};
 use crate::error::{AppError, AppResult};
 use crate::models::{WorkEventRow, WorkSessionRow, WorkSessionStatus, parse_date, parse_rfc3339};
 use crate::services::entries::today;
@@ -15,7 +19,7 @@ pub struct WorkSnapshot {
 pub struct WorkDaySummary {
     pub local_date: NaiveDate,
     pub elapsed_seconds: i64,
-    pub intervals: Vec<Interval>,
+    pub intervals: Vec<LabeledInterval>,
 }
 
 pub async fn current(
@@ -75,7 +79,7 @@ pub async fn elapsed_on(
     Ok(elapsed_from(&intervals))
 }
 
-fn elapsed_from(intervals: &[Interval]) -> i64 {
+fn elapsed_from(intervals: &[LabeledInterval]) -> i64 {
     intervals
         .iter()
         .map(|interval| (interval.end - interval.start).num_seconds())
@@ -88,12 +92,12 @@ async fn intervals_on(
     user_id: i64,
     local_date: NaiveDate,
     now: DateTime<Utc>,
-) -> AppResult<Vec<Interval>> {
+) -> AppResult<Vec<LabeledInterval>> {
     let sessions = sessions_on(pool, user_id, local_date).await?;
     let mut intervals = Vec::new();
     for session in &sessions {
-        let events = events_for(pool, session.id).await?;
-        intervals.extend(running_intervals(&events, now));
+        let events = event_records_for(pool, session.id).await?;
+        intervals.extend(labeled_intervals(session.id, &events, now));
     }
     Ok(intervals)
 }
@@ -114,6 +118,8 @@ pub async fn start(pool: &SqlitePool, user_id: i64, now: DateTime<Utc>) -> AppRe
             )),
         };
     }
+
+    ensure_timer_slot_free(pool, user_id, local_date, now).await?;
 
     let done = sqlx::query(
         "INSERT INTO work_sessions (user_id, local_date, status, created_at) VALUES (?, ?, 'running', ?)",
@@ -153,6 +159,9 @@ pub async fn resume(
     now: DateTime<Utc>,
 ) -> AppResult<WorkSnapshot> {
     let session = require_status(pool, user_id, now, WorkSessionStatus::Paused).await?;
+    let local_date = parse_date(&session.local_date)
+        .map_err(|_| AppError::Internal("local_date ungültig".into()))?;
+    ensure_timer_slot_free(pool, user_id, local_date, now).await?;
     set_status(pool, session.id, WorkSessionStatus::Running).await?;
     insert_event(pool, session.id, WorkEventKind::Resumed, now).await?;
     current(pool, user_id, now).await
@@ -193,6 +202,268 @@ pub async fn close_if_stale(pool: &SqlitePool, user_id: i64, now: DateTime<Utc>)
         }
         set_status(pool, row.id, WorkSessionStatus::Stopped).await?;
     }
+    Ok(())
+}
+
+pub async fn create_interval(
+    pool: &SqlitePool,
+    user_id: i64,
+    start_at: DateTime<Utc>,
+    end_at: DateTime<Utc>,
+    now: DateTime<Utc>,
+) -> AppResult<LabeledInterval> {
+    let (start, end) = validate_closed(start_at, end_at, now, None)?;
+    let local_date = civil_date(start, APP_TZ);
+    let candidate = Interval::new(start, end)
+        .ok_or_else(|| AppError::Unprocessable("Zeitraum ungültig".into()))?;
+    ensure_no_work_overlap(pool, user_id, local_date, candidate, None, now).await?;
+
+    let done = sqlx::query(
+        "INSERT INTO work_sessions (user_id, local_date, status, created_at) VALUES (?, ?, 'stopped', ?)",
+    )
+    .bind(user_id)
+    .bind(local_date.format("%Y-%m-%d").to_string())
+    .bind(now.to_rfc3339())
+    .execute(pool)
+    .await?;
+    let session_id = done.last_insert_rowid();
+    let opening_id = insert_event(pool, session_id, WorkEventKind::Started, start).await?;
+    insert_event(pool, session_id, WorkEventKind::Stopped, end).await?;
+    let events = event_records_for(pool, session_id).await?;
+    labeled_intervals(session_id, &events, now)
+        .into_iter()
+        .find(|item| item.id == opening_id)
+        .ok_or_else(|| AppError::Internal("Intervall nach dem Anlegen nicht gefunden".into()))
+}
+
+pub async fn update_interval(
+    pool: &SqlitePool,
+    user_id: i64,
+    id: i64,
+    start_at: DateTime<Utc>,
+    end_at: Option<DateTime<Utc>>,
+    now: DateTime<Utc>,
+) -> AppResult<LabeledInterval> {
+    let (session, interval, mut records) = find_owned_interval(pool, user_id, id, now).await?;
+    let local_date = parse_date(&session.local_date)
+        .map_err(|_| AppError::Internal("local_date ungültig".into()))?;
+
+    if interval.open {
+        if end_at.is_some() {
+            return Err(AppError::Unprocessable(
+                "Laufende Arbeitszeit hat kein Ende".into(),
+            ));
+        }
+        let start = truncate_to_minute(start_at);
+        if start >= now {
+            return Err(AppError::Unprocessable(
+                "Start muss vor dem aktuellen Zeitpunkt liegen".into(),
+            ));
+        }
+        if civil_date(start, APP_TZ) != local_date {
+            return Err(AppError::Unprocessable(
+                "Tageswechsel ist nicht erlaubt".into(),
+            ));
+        }
+        let candidate = Interval::running(start, now);
+        ensure_no_work_overlap(pool, user_id, local_date, candidate, Some(id), now).await?;
+        apply_event_times(&mut records, &[(interval.id, start)])?;
+        persist_event_times(pool, &records).await?;
+    } else {
+        let end = end_at
+            .ok_or_else(|| AppError::Unprocessable("Endzeitpunkt ist erforderlich".into()))?;
+        let (start, end) = validate_closed(start_at, end, now, Some(local_date))?;
+        let candidate = Interval::new(start, end)
+            .ok_or_else(|| AppError::Unprocessable("Zeitraum ungültig".into()))?;
+        ensure_no_work_overlap(pool, user_id, local_date, candidate, Some(id), now).await?;
+        let mut updates = vec![(interval.id, start)];
+        if let Some(close_id) = interval.close_event_id {
+            updates.push((close_id, end));
+        }
+        apply_event_times(&mut records, &updates)?;
+        persist_event_times(pool, &records).await?;
+    }
+
+    let events = event_records_for(pool, session.id).await?;
+    labeled_intervals(session.id, &events, now)
+        .into_iter()
+        .find(|item| item.id == id)
+        .ok_or_else(|| AppError::Internal("Intervall nach dem Speichern nicht gefunden".into()))
+}
+
+pub async fn delete_interval(
+    pool: &SqlitePool,
+    user_id: i64,
+    id: i64,
+    now: DateTime<Utc>,
+) -> AppResult<()> {
+    let (session, interval, records) = find_owned_interval(pool, user_id, id, now).await?;
+    if interval.open {
+        return Err(AppError::Unprocessable(
+            "Laufende Arbeitszeit kann nicht gelöscht werden".into(),
+        ));
+    }
+    let remaining = remove_interval(&records, id).ok_or(AppError::NotFound)?;
+    if remaining.is_empty() || labeled_intervals(session.id, &remaining, now).is_empty() {
+        sqlx::query("DELETE FROM work_sessions WHERE id = ?")
+            .bind(session.id)
+            .execute(pool)
+            .await?;
+        return Ok(());
+    }
+
+    if let Some(close_id) = interval.close_event_id {
+        delete_event(pool, close_id).await?;
+    }
+    delete_event(pool, interval.id).await?;
+    if let Some(first) = remaining.first() {
+        sqlx::query("UPDATE work_session_events SET kind = ? WHERE id = ?")
+            .bind(kind_str(first.kind))
+            .bind(first.id)
+            .execute(pool)
+            .await?;
+    }
+    Ok(())
+}
+
+async fn ensure_timer_slot_free(
+    pool: &SqlitePool,
+    user_id: i64,
+    local_date: NaiveDate,
+    now: DateTime<Utc>,
+) -> AppResult<()> {
+    let existing = intervals_on(pool, user_id, local_date, now).await?;
+    if existing.iter().any(|interval| interval.end > now) {
+        return Err(AppError::Conflict(
+            "Arbeitszeit überschneidet sich mit einem bestehenden Zeitraum".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_closed(
+    start_at: DateTime<Utc>,
+    end_at: DateTime<Utc>,
+    now: DateTime<Utc>,
+    expected_date: Option<NaiveDate>,
+) -> AppResult<(DateTime<Utc>, DateTime<Utc>)> {
+    let start = truncate_to_minute(start_at);
+    let end = truncate_to_minute(end_at);
+    if end <= start {
+        return Err(AppError::Unprocessable(
+            "Arbeitszeit braucht eine Dauer größer als 0".into(),
+        ));
+    }
+    if start > now || end > now {
+        return Err(AppError::Unprocessable(
+            "Zeitpunkt liegt in der Zukunft".into(),
+        ));
+    }
+    if !same_civil_day(start, end, APP_TZ) {
+        return Err(AppError::Unprocessable(
+            "Start und Ende müssen am selben Kalendertag liegen".into(),
+        ));
+    }
+    let date = civil_date(start, APP_TZ);
+    if expected_date.is_some_and(|expected| expected != date) {
+        return Err(AppError::Unprocessable(
+            "Tageswechsel ist nicht erlaubt".into(),
+        ));
+    }
+    Ok((start, end))
+}
+
+async fn ensure_no_work_overlap(
+    pool: &SqlitePool,
+    user_id: i64,
+    local_date: NaiveDate,
+    candidate: Interval,
+    except_id: Option<i64>,
+    now: DateTime<Utc>,
+) -> AppResult<()> {
+    let existing = intervals_on(pool, user_id, local_date, now).await?;
+    let others: Vec<Interval> = existing
+        .iter()
+        .filter(|interval| except_id != Some(interval.id))
+        .filter_map(|interval| Interval::new(interval.start, interval.end))
+        .collect();
+    if any_overlap(candidate, &others) {
+        return Err(AppError::Conflict(
+            "Arbeitszeit überschneidet sich mit einem bestehenden Zeitraum".into(),
+        ));
+    }
+    Ok(())
+}
+
+async fn find_owned_interval(
+    pool: &SqlitePool,
+    user_id: i64,
+    id: i64,
+    now: DateTime<Utc>,
+) -> AppResult<(WorkSessionRow, LabeledInterval, Vec<WorkEventRecord>)> {
+    let event = sqlx::query_as::<_, WorkEventRow>(
+        "SELECT e.id, e.work_session_id, e.kind, e.at
+         FROM work_session_events e
+         INNER JOIN work_sessions s ON s.id = e.work_session_id
+         WHERE e.id = ? AND s.user_id = ?",
+    )
+    .bind(id)
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(AppError::NotFound)?;
+
+    let session = sqlx::query_as::<_, WorkSessionRow>(
+        "SELECT id, user_id, local_date, status, created_at FROM work_sessions WHERE id = ?",
+    )
+    .bind(event.work_session_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(AppError::NotFound)?;
+
+    let records = event_records_for(pool, session.id).await?;
+    let interval = labeled_intervals(session.id, &records, now)
+        .into_iter()
+        .find(|item| item.id == id)
+        .ok_or(AppError::NotFound)?;
+    Ok((session, interval, records))
+}
+
+fn apply_event_times(
+    records: &mut [WorkEventRecord],
+    updates: &[(i64, DateTime<Utc>)],
+) -> AppResult<()> {
+    for (id, at) in updates {
+        let event = records
+            .iter_mut()
+            .find(|event| event.id == *id)
+            .ok_or_else(|| AppError::Internal("Event nicht gefunden".into()))?;
+        event.at = *at;
+    }
+    if !timestamps_non_decreasing(records) {
+        return Err(AppError::Unprocessable(
+            "Die Zeiten der Arbeitszeit sind ungültig".into(),
+        ));
+    }
+    Ok(())
+}
+
+async fn persist_event_times(pool: &SqlitePool, records: &[WorkEventRecord]) -> AppResult<()> {
+    for event in records {
+        sqlx::query("UPDATE work_session_events SET at = ? WHERE id = ?")
+            .bind(event.at.to_rfc3339())
+            .bind(event.id)
+            .execute(pool)
+            .await?;
+    }
+    Ok(())
+}
+
+async fn delete_event(pool: &SqlitePool, id: i64) -> AppResult<()> {
+    sqlx::query("DELETE FROM work_session_events WHERE id = ?")
+        .bind(id)
+        .execute(pool)
+        .await?;
     Ok(())
 }
 
@@ -282,7 +553,7 @@ async fn sessions_on(
     .await?)
 }
 
-async fn events_for(pool: &SqlitePool, session_id: i64) -> AppResult<Vec<WorkEvent>> {
+async fn event_records_for(pool: &SqlitePool, session_id: i64) -> AppResult<Vec<WorkEventRecord>> {
     let rows = sqlx::query_as::<_, WorkEventRow>(
         "SELECT id, work_session_id, kind, at FROM work_session_events WHERE work_session_id = ? ORDER BY id",
     )
@@ -292,18 +563,35 @@ async fn events_for(pool: &SqlitePool, session_id: i64) -> AppResult<Vec<WorkEve
 
     let mut events = Vec::new();
     for row in rows {
-        let kind = match row.kind.as_str() {
-            "started" => WorkEventKind::Started,
-            "paused" => WorkEventKind::Paused,
-            "resumed" => WorkEventKind::Resumed,
-            "stopped" => WorkEventKind::Stopped,
-            _ => return Err(AppError::Internal("Unbekanntes Work-Event".into())),
-        };
+        let kind = parse_kind(&row.kind)?;
         let at =
             parse_rfc3339(&row.at).map_err(|_| AppError::Internal("Event-Zeit ungültig".into()))?;
-        events.push(WorkEvent { kind, at });
+        events.push(WorkEventRecord {
+            id: row.id,
+            kind,
+            at,
+        });
     }
     Ok(events)
+}
+
+fn parse_kind(value: &str) -> AppResult<WorkEventKind> {
+    match value {
+        "started" => Ok(WorkEventKind::Started),
+        "paused" => Ok(WorkEventKind::Paused),
+        "resumed" => Ok(WorkEventKind::Resumed),
+        "stopped" => Ok(WorkEventKind::Stopped),
+        _ => Err(AppError::Internal("Unbekanntes Work-Event".into())),
+    }
+}
+
+fn kind_str(kind: WorkEventKind) -> &'static str {
+    match kind {
+        WorkEventKind::Started => "started",
+        WorkEventKind::Paused => "paused",
+        WorkEventKind::Resumed => "resumed",
+        WorkEventKind::Stopped => "stopped",
+    }
 }
 
 async fn insert_event(
@@ -311,20 +599,15 @@ async fn insert_event(
     session_id: i64,
     kind: WorkEventKind,
     at: DateTime<Utc>,
-) -> AppResult<()> {
-    let kind = match kind {
-        WorkEventKind::Started => "started",
-        WorkEventKind::Paused => "paused",
-        WorkEventKind::Resumed => "resumed",
-        WorkEventKind::Stopped => "stopped",
-    };
-    sqlx::query("INSERT INTO work_session_events (work_session_id, kind, at) VALUES (?, ?, ?)")
-        .bind(session_id)
-        .bind(kind)
-        .bind(at.to_rfc3339())
-        .execute(pool)
-        .await?;
-    Ok(())
+) -> AppResult<i64> {
+    let done =
+        sqlx::query("INSERT INTO work_session_events (work_session_id, kind, at) VALUES (?, ?, ?)")
+            .bind(session_id)
+            .bind(kind_str(kind))
+            .bind(at.to_rfc3339())
+            .execute(pool)
+            .await?;
+    Ok(done.last_insert_rowid())
 }
 
 async fn set_status(pool: &SqlitePool, id: i64, status: WorkSessionStatus) -> AppResult<()> {

@@ -60,5 +60,10 @@ pub fn router(state: AppState) -> Router {
         .route("/api/work-sessions/pause", post(work::pause))
         .route("/api/work-sessions/resume", post(work::resume))
         .route("/api/work-sessions/stop", post(work::stop))
+        .route("/api/work-intervals", post(work::create_interval))
+        .route(
+            "/api/work-intervals/{id}",
+            patch(work::update_interval).delete(work::delete_interval),
+        )
         .with_state(state)
 }

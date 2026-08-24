@@ -1,13 +1,18 @@
 <script lang="ts">
+	import { getContext } from 'svelte';
 	import { api } from '$lib/api';
 	import DateField from '$lib/components/DateField.svelte';
 	import NamedSelect from '$lib/components/NamedSelect.svelte';
 	import TimeField from '$lib/components/TimeField.svelte';
 	import { closeModalState, entryToForm, savePayload } from '$lib/day-entry';
+	import { closeWorkModalState, intervalToForm, saveWorkPayload } from '$lib/day-work';
 	import { addDays, formatBerlinDate, formatBerlinTime } from '$lib/dates';
 	import { durationBetween, formatHm, totalDurationSeconds } from '$lib/format';
-	import type { Entry, NamedItem, WorkDaySummary } from '$lib/types';
+	import { REFRESH_TIMERS_KEY, type RefreshTimers } from '$lib/timers-context';
+	import type { Entry, NamedItem, WorkDaySummary, WorkInterval } from '$lib/types';
 	import { totalWorkSeconds } from '$lib/work-summary';
+
+	const refreshTimers = getContext<RefreshTimers>(REFRESH_TIMERS_KEY);
 
 	let day = $state(formatBerlinDate(new Date()));
 	let entries = $state<Entry[]>([]);
@@ -24,6 +29,23 @@
 	let projectId = $state<number | null>(null);
 	let editing = $state<number | null>(null);
 	let open = $state(false);
+
+	let workFromH = $state(8);
+	let workFromM = $state(0);
+	let workToH = $state(9);
+	let workToM = $state(0);
+	let workEditing = $state<number | null>(null);
+	let workOpen = $state(false);
+	let workIntervalOpen = $state(false);
+
+	const workIntervals = $derived(workDays.flatMap((item) => item.intervals ?? []));
+
+	async function refreshAfterWorkChange() {
+		await load();
+		if (day === formatBerlinDate(new Date()) && refreshTimers) {
+			await refreshTimers();
+		}
+	}
 
 	async function load() {
 		const [entryRes, workRes, taskRes, projectRes] = await Promise.all([
@@ -53,10 +75,29 @@
 		error = '';
 	}
 
+	function closeWorkModal() {
+		const next = closeWorkModalState();
+		workOpen = next.open;
+		workEditing = next.editing;
+		workIntervalOpen = false;
+		error = '';
+	}
+
 	function openCreate() {
 		editing = null;
 		error = '';
 		open = true;
+	}
+
+	function openWorkCreate() {
+		workEditing = null;
+		workIntervalOpen = false;
+		workFromH = 8;
+		workFromM = 0;
+		workToH = 9;
+		workToM = 0;
+		error = '';
+		workOpen = true;
 	}
 
 	async function save() {
@@ -82,6 +123,29 @@
 		}
 	}
 
+	async function saveWork() {
+		error = '';
+		const body = saveWorkPayload(
+			day,
+			{ fromH: workFromH, fromM: workFromM, toH: workToH, toM: workToM },
+			workIntervalOpen
+		);
+		try {
+			if (workEditing == null) {
+				await api('/api/work-intervals', { method: 'POST', body: JSON.stringify(body) });
+			} else {
+				await api(`/api/work-intervals/${workEditing}`, {
+					method: 'PATCH',
+					body: JSON.stringify(body)
+				});
+			}
+			closeWorkModal();
+			await refreshAfterWorkChange();
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Speichern fehlgeschlagen';
+		}
+	}
+
 	function edit(entry: Entry) {
 		const form = entryToForm(entry);
 		editing = entry.id;
@@ -95,10 +159,28 @@
 		open = true;
 	}
 
+	function editWork(interval: WorkInterval) {
+		const form = intervalToForm(interval);
+		workEditing = interval.id;
+		workIntervalOpen = interval.open;
+		workFromH = form.fromH;
+		workFromM = form.fromM;
+		workToH = form.toH;
+		workToM = form.toM;
+		error = '';
+		workOpen = true;
+	}
+
 	async function remove(id: number) {
 		await api(`/api/entries/${id}`, { method: 'DELETE' });
 		if (editing === id) closeModal();
 		await load();
+	}
+
+	async function removeWork(id: number) {
+		await api(`/api/work-intervals/${id}`, { method: 'DELETE' });
+		if (workEditing === id) closeWorkModal();
+		await refreshAfterWorkChange();
 	}
 
 	async function assignTask(entry: Entry) {
@@ -127,9 +209,50 @@
 		>
 	</div>
 
-	{#if error && !open}
+	{#if error && !open && !workOpen}
 		<p class="text-sm text-stop">{error}</p>
 	{/if}
+
+	<div class="panel overflow-hidden rounded-xl">
+		<div class="flex items-center justify-between bg-panel-2 px-4 py-2">
+			<p class="text-xs uppercase tracking-wider text-muted">Arbeitszeit</p>
+			<button class="text-xs font-semibold text-amber" onclick={openWorkCreate}>Arbeitszeit erfassen</button>
+		</div>
+		<table class="w-full text-sm">
+			<thead class="text-left text-xs uppercase tracking-wider text-muted">
+				<tr>
+					<th class="px-4 py-2">Von</th>
+					<th class="px-4 py-2">Bis</th>
+					<th class="px-4 py-2">Dauer</th>
+					<th class="px-4 py-2"></th>
+				</tr>
+			</thead>
+			<tbody>
+				{#each workIntervals as interval}
+					<tr class="border-t border-line">
+						<td class="clock-face px-4 py-2">{formatBerlinTime(new Date(interval.start_at))}</td>
+						<td class="clock-face px-4 py-2"
+							>{interval.open ? 'läuft' : formatBerlinTime(new Date(interval.end_at))}</td
+						>
+						<td class="clock-face px-4 py-2">{formatHm(durationBetween(interval.start_at, interval.end_at))}</td>
+						<td class="px-4 py-2 text-right">
+							<button class="text-xs text-muted" onclick={() => editWork(interval)}>Bearbeiten</button>
+							{#if !interval.open}
+								<button class="ml-2 text-xs text-stop" onclick={() => removeWork(interval.id)}>Löschen</button>
+							{/if}
+						</td>
+					</tr>
+				{/each}
+			</tbody>
+			<tfoot>
+				<tr class="border-t border-line bg-panel-2">
+					<td class="px-4 py-2 text-xs uppercase tracking-wider text-muted" colspan="2">Summe</td>
+					<td class="clock-face px-4 py-2">{formatHm(totalWorkSeconds(workDays))}</td>
+					<td></td>
+				</tr>
+			</tfoot>
+		</table>
+	</div>
 
 	<div class="panel overflow-hidden rounded-xl">
 		<table class="w-full text-sm">
@@ -173,11 +296,6 @@
 					<td class="clock-face px-4 py-2">{formatHm(totalDurationSeconds(entries))}</td>
 					<td colspan="3"></td>
 				</tr>
-				<tr class="border-t border-line bg-panel-2">
-					<td class="px-4 py-2 text-xs uppercase tracking-wider text-muted" colspan="2">Arbeitszeit</td>
-					<td class="clock-face px-4 py-2">{formatHm(totalWorkSeconds(workDays))}</td>
-					<td colspan="3"></td>
-				</tr>
 			</tfoot>
 		</table>
 	</div>
@@ -207,6 +325,27 @@
 				<button class="px-3 py-2 text-sm text-muted" onclick={closeModal}>Abbrechen</button>
 				<button class="rounded-md bg-amber px-4 py-2 text-sm font-semibold text-bg" onclick={save}
 					>{editing == null ? 'Erfassen' : 'Speichern'}</button
+				>
+			</div>
+		</div>
+	</div>
+{/if}
+
+{#if workOpen}
+	<div class="fixed inset-0 z-30 flex items-center justify-center bg-black/50 p-4">
+		<div class="panel w-full max-w-xl space-y-3 rounded-xl p-5">
+			<h2 class="text-lg">{workEditing == null ? 'Arbeitszeit erfassen' : 'Arbeitszeit bearbeiten'}</h2>
+			<div class="grid gap-3 sm:grid-cols-2">
+				<TimeField bind:hours={workFromH} bind:minutes={workFromM} label="Von" />
+				<TimeField bind:hours={workToH} bind:minutes={workToM} label="Bis" disabled={workIntervalOpen} />
+			</div>
+			{#if error}
+				<p class="text-sm text-stop">{error}</p>
+			{/if}
+			<div class="flex justify-end gap-2">
+				<button class="px-3 py-2 text-sm text-muted" onclick={closeWorkModal}>Abbrechen</button>
+				<button class="rounded-md bg-amber px-4 py-2 text-sm font-semibold text-bg" onclick={saveWork}
+					>{workEditing == null ? 'Erfassen' : 'Speichern'}</button
 				>
 			</div>
 		</div>

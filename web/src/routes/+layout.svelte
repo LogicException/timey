@@ -6,6 +6,8 @@
 	import { api } from '$lib/api';
 	import { fetchMe, logout } from '$lib/auth';
 	import Timers from '$lib/components/Timers.svelte';
+	import { setContext } from 'svelte';
+	import { REFRESH_TIMERS_KEY } from '$lib/timers-context';
 	import type { Entry, NamedItem, User, WorkSnapshot } from '$lib/types';
 
 	let { children } = $props();
@@ -46,6 +48,8 @@
 		tasks = taskRes;
 		projects = projectRes;
 	}
+
+	setContext(REFRESH_TIMERS_KEY, refreshTimers);
 
 	$effect(() => {
 		void page.url.pathname;

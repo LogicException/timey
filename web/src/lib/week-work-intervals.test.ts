@@ -21,8 +21,10 @@ describe('workIntervalEvents', () => {
 					local_date: '2026-08-21',
 					intervals: [
 						{
+							id: 1,
 							start_at: '2026-08-21T06:00:00Z',
-							end_at: '2026-08-21T07:00:00Z'
+							end_at: '2026-08-21T07:00:00Z',
+							open: false
 						}
 					]
 				}),
@@ -30,8 +32,10 @@ describe('workIntervalEvents', () => {
 					local_date: '2026-08-22',
 					intervals: [
 						{
+							id: 2,
 							start_at: '2026-08-22T07:30:00Z',
-							end_at: '2026-08-22T08:30:00Z'
+							end_at: '2026-08-22T08:30:00Z',
+							open: false
 						}
 					]
 				})
@@ -61,12 +65,16 @@ describe('workIntervalEvents', () => {
 					local_date: '2026-08-21',
 					intervals: [
 						{
+							id: 3,
 							start_at: '2026-08-21T06:00:00Z',
-							end_at: '2026-08-21T07:00:00Z'
+							end_at: '2026-08-21T07:00:00Z',
+							open: false
 						},
 						{
+							id: 4,
 							start_at: '2026-08-21T07:30:00Z',
-							end_at: '2026-08-21T08:30:00Z'
+							end_at: '2026-08-21T08:30:00Z',
+							open: false
 						}
 					]
 				})

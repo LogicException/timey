@@ -43,8 +43,10 @@ export type WorkSnapshot = {
 };
 
 export type WorkInterval = {
+	id: number;
 	start_at: string;
 	end_at: string;
+	open: boolean;
 };
 
 export type WorkDaySummary = {
