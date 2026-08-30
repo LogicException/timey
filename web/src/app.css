@@ -63,3 +63,8 @@ body {
 	background-color: rgba(228, 176, 74, 0.16);
 	opacity: 1;
 }
+
+.fc .fc-bg-event.work-interval-violation {
+	background-color: rgba(212, 91, 73, 0.28);
+}
+

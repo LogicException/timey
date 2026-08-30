@@ -8,13 +8,15 @@
 	import Timers from '$lib/components/Timers.svelte';
 	import { setContext } from 'svelte';
 	import { REFRESH_TIMERS_KEY } from '$lib/timers-context';
-	import type { Entry, NamedItem, User, WorkSnapshot } from '$lib/types';
+	import { formatBerlinDate } from '$lib/dates';
+	import type { Entry, NamedItem, User, WorkDaySummary, WorkInterval, WorkSnapshot } from '$lib/types';
 
 	let { children } = $props();
 
 	let user = $state<User | null>(null);
 	let ready = $state(false);
 	let work = $state<WorkSnapshot | null>(null);
+	let workIntervals = $state<WorkInterval[]>([]);
 	let timer = $state<Entry | null>(null);
 	let tasks = $state<NamedItem[]>([]);
 	let projects = $state<NamedItem[]>([]);
@@ -25,6 +27,7 @@
 		user = await fetchMe();
 		if (!user) {
 			work = null;
+			workIntervals = [];
 			timer = null;
 			if (!publicPath) await goto('/login');
 			return;
@@ -37,16 +40,19 @@
 	}
 
 	async function refreshTimers() {
-		const [workRes, timerRes, taskRes, projectRes] = await Promise.all([
+		const today = formatBerlinDate(new Date());
+		const [workRes, timerRes, taskRes, projectRes, workDays] = await Promise.all([
 			api<WorkSnapshot>('/api/work-sessions/current'),
 			api<Entry | null>('/api/entries/timer'),
 			api<NamedItem[]>('/api/tasks'),
-			api<NamedItem[]>('/api/projects')
+			api<NamedItem[]>('/api/projects'),
+			api<WorkDaySummary[]>(`/api/work-sessions?from=${today}&to=${today}`)
 		]);
 		work = workRes;
 		timer = timerRes;
 		tasks = taskRes;
 		projects = projectRes;
+		workIntervals = workDays.flatMap((day) => day.intervals ?? []);
 	}
 
 	setContext(REFRESH_TIMERS_KEY, refreshTimers);
@@ -95,7 +101,7 @@
 				>
 			</nav>
 		</header>
-		<Timers {work} {timer} {tasks} {projects} onRefresh={refreshTimers} />
+		<Timers {work} {workIntervals} {timer} {tasks} {projects} onRefresh={refreshTimers} />
 		<main class="flex-1">{@render children()}</main>
 	</div>
 {/if}
