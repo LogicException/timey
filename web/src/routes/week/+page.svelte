@@ -15,6 +15,7 @@
 		startOfWeek
 	} from '$lib/dates';
 	import { applyBerlinTimes, entryToEditState, savePayload } from '$lib/week-entry';
+	import { weekTimeGridLayout } from '$lib/week-calendar';
 	import { workIntervalEvents } from '$lib/week-work-intervals';
 	import type { Entry, NamedItem, UserSettings, WorkDaySummary } from '$lib/types';
 	import { DEFAULT_WORK_END, DEFAULT_WORK_START, weekSlotTimes } from '$lib/working-hours';
@@ -126,6 +127,7 @@
 				slotMaxTime: slots.max,
 				slotDuration: '00:15:00',
 				snapDuration: '00:15:00',
+				...weekTimeGridLayout(),
 				selectable: true,
 				selectMirror: true,
 				nowIndicator: true,
