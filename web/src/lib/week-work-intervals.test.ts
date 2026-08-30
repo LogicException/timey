@@ -100,4 +100,57 @@ describe('workIntervalEvents', () => {
 	it('treats missing intervals as empty', () => {
 		expect(workIntervalEvents([day({ local_date: '2026-08-21' })])).toEqual([]);
 	});
+
+	it('marks intervals in a too-long continuous block', () => {
+		expect(
+			workIntervalEvents([
+				day({
+					local_date: '2026-08-21',
+					intervals: [
+						{
+							id: 5,
+							start_at: '2026-08-21T06:00:00Z',
+							end_at: '2026-08-21T14:00:00Z',
+							open: false
+						}
+					]
+				})
+			])
+		).toEqual([
+			{
+				id: 'work-2026-08-21-0',
+				start: '2026-08-21T06:00:00Z',
+				end: '2026-08-21T14:00:00Z',
+				display: 'background',
+				classNames: ['work-interval', 'work-interval-violation']
+			}
+		]);
+	});
+
+	it('marks stitched intervals when a short pause fails to interrupt', () => {
+		expect(
+			workIntervalEvents([
+				day({
+					local_date: '2026-08-21',
+					intervals: [
+						{
+							id: 6,
+							start_at: '2026-08-21T06:00:00Z',
+							end_at: '2026-08-21T10:00:00Z',
+							open: false
+						},
+						{
+							id: 7,
+							start_at: '2026-08-21T10:10:00Z',
+							end_at: '2026-08-21T14:10:00Z',
+							open: false
+						}
+					]
+				})
+			]).map((event) => event.classNames)
+		).toEqual([
+			['work-interval', 'work-interval-violation'],
+			['work-interval', 'work-interval-violation']
+		]);
+	});
 });

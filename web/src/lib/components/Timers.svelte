@@ -1,18 +1,22 @@
 <script lang="ts">
 	import { api } from '$lib/api';
+	import { evaluateBreakCompliance } from '$lib/break-compliance';
 	import { formatWorkDuration } from '$lib/format';
-	import type { Entry, NamedItem, WorkSnapshot } from '$lib/types';
+	import type { Entry, NamedItem, WorkInterval, WorkSnapshot } from '$lib/types';
 	import { workAllowsTimer } from '$lib/work-summary';
+	import BreakWarnings from './BreakWarnings.svelte';
 	import NamedSelect from './NamedSelect.svelte';
 
 	let {
 		work,
+		workIntervals = [],
 		timer,
 		tasks,
 		projects,
 		onRefresh
 	}: {
 		work: WorkSnapshot | null;
+		workIntervals?: WorkInterval[];
 		timer: Entry | null;
 		tasks: NamedItem[];
 		projects: NamedItem[];
@@ -20,18 +24,23 @@
 	} = $props();
 
 	let displaySeconds = $state(0);
+	let nowMs = $state(Date.now());
 	let taskId = $state<number | null>(null);
 	let projectId = $state<number | null>(null);
 	let error = $state('');
 	let boundTimerId = $state<number | null>(null);
 
+	const breakViolations = $derived(evaluateBreakCompliance(workIntervals, new Date(nowMs)));
+
 	$effect(() => {
 		displaySeconds = work?.elapsed_seconds ?? 0;
+		nowMs = Date.now();
 		if (work?.status !== 'running') return;
 		const started = Date.now();
 		const base = work.elapsed_seconds;
 		const id = setInterval(() => {
 			displaySeconds = base + Math.floor((Date.now() - started) / 1000);
+			nowMs = Date.now();
 		}, 1000);
 		return () => clearInterval(id);
 	});
@@ -162,6 +171,11 @@
 		</div>
 	{/if}
 </div>
+{#if breakViolations.length > 0}
+	<div class="mt-2">
+		<BreakWarnings violations={breakViolations} compact />
+	</div>
+{/if}
 {#if error}
 	<p class="mt-2 text-sm text-stop">{error}</p>
 {/if}

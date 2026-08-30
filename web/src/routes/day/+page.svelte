@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { getContext } from 'svelte';
 	import { api } from '$lib/api';
+	import { evaluateBreakCompliance } from '$lib/break-compliance';
+	import BreakWarnings from '$lib/components/BreakWarnings.svelte';
 	import DateField from '$lib/components/DateField.svelte';
 	import NamedSelect from '$lib/components/NamedSelect.svelte';
 	import TimeField from '$lib/components/TimeField.svelte';
@@ -39,6 +41,7 @@
 	let workIntervalOpen = $state(false);
 
 	const workIntervals = $derived(workDays.flatMap((item) => item.intervals ?? []));
+	const breakViolations = $derived(evaluateBreakCompliance(workIntervals));
 
 	async function refreshAfterWorkChange() {
 		await load();
@@ -252,6 +255,11 @@
 				</tr>
 			</tfoot>
 		</table>
+		{#if breakViolations.length > 0}
+			<div class="border-t border-line px-4 py-3">
+				<BreakWarnings violations={breakViolations} compact />
+			</div>
+		{/if}
 	</div>
 
 	<div class="panel overflow-hidden rounded-xl">

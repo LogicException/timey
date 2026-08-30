@@ -5,6 +5,8 @@
 	import interactionPlugin from '@fullcalendar/interaction';
 	import deLocale from '@fullcalendar/core/locales/de';
 	import { api } from '$lib/api';
+	import { daysWithBreakViolations, type DayBreakWarnings } from '$lib/break-compliance';
+	import BreakWarnings from '$lib/components/BreakWarnings.svelte';
 	import NamedSelect from '$lib/components/NamedSelect.svelte';
 	import TimeField from '$lib/components/TimeField.svelte';
 	import {
@@ -15,6 +17,7 @@
 		startOfWeek
 	} from '$lib/dates';
 	import { applyBerlinTimes, entryToEditState, savePayload } from '$lib/week-entry';
+	import { weekTimeGridLayout } from '$lib/week-calendar';
 	import { workIntervalEvents } from '$lib/week-work-intervals';
 	import type { Entry, NamedItem, UserSettings, WorkDaySummary } from '$lib/types';
 	import { DEFAULT_WORK_END, DEFAULT_WORK_START, weekSlotTimes } from '$lib/working-hours';
@@ -35,6 +38,7 @@
 	let toM = $state(0);
 	let taskId = $state<number | null>(null);
 	let projectId = $state<number | null>(null);
+	let breakWarningDays = $state<DayBreakWarnings[]>([]);
 
 	async function loadRange(from: string, to: string): Promise<Entry[]> {
 		return api(`/api/entries?from=${from}&to=${to}`);
@@ -86,6 +90,7 @@
 		const to = endOfWeek(end);
 		const [entries, workDays] = await Promise.all([loadRange(from, to), loadWorkDays(from, to)]);
 		entriesById = new Map();
+		breakWarningDays = daysWithBreakViolations(workDays);
 		calendar.removeAllEvents();
 		for (const entry of entries) {
 			if (!entry.end_at) continue;
@@ -126,6 +131,7 @@
 				slotMaxTime: slots.max,
 				slotDuration: '00:15:00',
 				snapDuration: '00:15:00',
+				...weekTimeGridLayout(),
 				selectable: true,
 				selectMirror: true,
 				nowIndicator: true,
@@ -216,8 +222,20 @@
 	}
 </script>
 
-<div class="panel rounded-xl p-3">
-	<div bind:this={el}></div>
+<div class="space-y-3">
+	{#if breakWarningDays.length > 0}
+		<div class="panel space-y-3 rounded-xl p-4">
+			{#each breakWarningDays as day (day.local_date)}
+				<div>
+					<p class="mb-1 text-xs uppercase tracking-wider text-muted">{day.local_date}</p>
+					<BreakWarnings violations={day.violations} compact />
+				</div>
+			{/each}
+		</div>
+	{/if}
+	<div class="panel rounded-xl p-3">
+		<div bind:this={el}></div>
+	</div>
 </div>
 
 {#if open}
