@@ -23,6 +23,11 @@ export function formatBerlinDate(date: Date): string {
 	return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
+export function formatGermanDate(isoDate: string): string {
+	const [year, month, day] = isoDate.split('-');
+	return `${day}.${month}.${year}`;
+}
+
 export function formatBerlinTime(date: Date): string {
 	const parts = berlinParts(date);
 	return `${parts.hour}:${parts.minute}`;

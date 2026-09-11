@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { addDays, startOfWeek } from '$lib/dates';
+	import { addDays, formatGermanDate, startOfWeek } from '$lib/dates';
 
 	let {
 		value = $bindable(),
@@ -53,7 +53,7 @@
 			open = !open;
 		}}
 	>
-		{value}
+		{formatGermanDate(value)}
 	</button>
 	{#if open}
 		<div class="panel absolute z-20 mt-2 w-72 rounded-lg p-3">

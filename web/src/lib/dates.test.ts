@@ -5,6 +5,7 @@ import {
 	endOfMonth,
 	endOfWeek,
 	formatBerlinDate,
+	formatGermanDate,
 	rangeForPreset,
 	showsManualDateFields,
 	startOfMonth,
@@ -83,5 +84,11 @@ describe('Berlin conversion', () => {
 describe('addDays', () => {
 	it('crosses months', () => {
 		expect(addDays('2026-08-31', 1)).toBe('2026-09-01');
+	});
+});
+
+describe('formatGermanDate', () => {
+	it('formats ISO calendar dates as TT.MM.JJJJ', () => {
+		expect(formatGermanDate('2026-09-11')).toBe('11.09.2026');
 	});
 });
