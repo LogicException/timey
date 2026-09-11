@@ -987,6 +987,132 @@ async fn patch_task_empty_body_is_unprocessable() {
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
 }
 
+fn assert_preselect_color(value: &Value) {
+    let color = value.as_str().expect("color string");
+    assert!(
+        timey_api::domain::is_allowed_preselect(color),
+        "color {color} is outside the preselect band"
+    );
+}
+
+#[tokio::test]
+async fn seeded_tasks_have_preselect_colors() {
+    let ctx = TestCtx::new().await;
+    let cookie = ctx.login("admin", "password1").await;
+    let (status, tasks, _) = ctx
+        .request("GET", "/api/tasks?include_system=true", Some(&cookie), None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{tasks}");
+    let rows = tasks.as_array().expect("array");
+    assert!(!rows.is_empty());
+    for row in rows {
+        assert_preselect_color(&row["color"]);
+    }
+}
+
+#[tokio::test]
+async fn create_task_assigns_random_preselect_color() {
+    let ctx = TestCtx::new().await;
+    let cookie = ctx.login("admin", "password1").await;
+    let (status, body, _) = ctx
+        .request(
+            "POST",
+            "/api/tasks",
+            Some(&cookie),
+            Some(json!({ "name": "Review" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["name"], "Review");
+    assert_preselect_color(&body["color"]);
+}
+
+#[tokio::test]
+async fn patch_task_sets_color() {
+    let ctx = TestCtx::new().await;
+    let cookie = ctx.login("admin", "password1").await;
+    let (_, tasks, _) = ctx.request("GET", "/api/tasks", Some(&cookie), None).await;
+    let id = task_id_by_name(&tasks, "Coding");
+
+    let (status, body, _) = ctx
+        .request(
+            "PATCH",
+            &format!("/api/tasks/{id}"),
+            Some(&cookie),
+            Some(json!({ "color": "#000000" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["color"], "#000000");
+}
+
+#[tokio::test]
+async fn patch_task_invalid_color_is_unprocessable() {
+    let ctx = TestCtx::new().await;
+    let cookie = ctx.login("admin", "password1").await;
+    let (_, tasks, _) = ctx.request("GET", "/api/tasks", Some(&cookie), None).await;
+    let id = task_id_by_name(&tasks, "Coding");
+
+    let (status, body, _) = ctx
+        .request(
+            "PATCH",
+            &format!("/api/tasks/{id}"),
+            Some(&cookie),
+            Some(json!({ "color": "red" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    let error = body["error"].as_str().unwrap_or("");
+    assert!(error.contains("Farbe"), "{body}");
+}
+
+#[tokio::test]
+async fn list_entries_includes_task_color() {
+    let ctx = TestCtx::new().await;
+    let cookie = ctx.login("admin", "password1").await;
+    let (_, tasks, _) = ctx.request("GET", "/api/tasks", Some(&cookie), None).await;
+    let coding = tasks
+        .as_array()
+        .expect("array")
+        .iter()
+        .find(|row| row["name"] == "Coding")
+        .expect("coding");
+    let task_id = coding["id"].as_i64().expect("id");
+    let task_color = coding["color"].as_str().expect("color").to_string();
+
+    let (status, created, _) = ctx
+        .request(
+            "POST",
+            "/api/entries",
+            Some(&cookie),
+            Some(json!({
+                "task_id": task_id,
+                "start_at": "2026-08-21T07:00:00Z",
+                "end_at": "2026-08-21T08:00:00Z"
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    assert_eq!(created["task_color"], task_color);
+
+    let (status, entries, _) = ctx
+        .request(
+            "GET",
+            "/api/entries?from=2026-08-21&to=2026-08-21",
+            Some(&cookie),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{entries}");
+    let row = entries
+        .as_array()
+        .expect("array")
+        .iter()
+        .find(|row| row["id"] == created["id"])
+        .expect("entry");
+    assert_eq!(row["task_color"], task_color);
+}
+
 #[tokio::test]
 async fn patch_task_foreign_id_is_not_found() {
     let ctx = TestCtx::new().await;

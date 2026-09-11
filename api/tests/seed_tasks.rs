@@ -104,6 +104,12 @@ async fn seed_creates_exactly_one_unbestimmt_system_task() {
     assert_eq!(system.len(), 1);
     assert_eq!(system[0].name, "unbestimmt");
     assert!(!system[0].archived);
+    assert!(
+        visible
+            .iter()
+            .all(|row| timey_api::domain::is_allowed_preselect(&row.color)),
+        "seeded tasks must have a preselect color"
+    );
 }
 
 #[tokio::test]

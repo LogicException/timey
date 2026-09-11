@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { formatHm } from '$lib/format';
-	import { colorForIndex, type ChartGroup, type ChartSlice } from '$lib/report-chart';
+	import { sliceColor, type ChartGroup, type ChartSlice } from '$lib/report-chart';
 
 	let { slices = [], groups }: { slices?: ChartSlice[]; groups?: ChartGroup[] } = $props();
 
@@ -31,7 +31,7 @@
 		<div class="h-3 overflow-hidden rounded-full bg-panel-2" aria-hidden="true">
 			<div
 				class="h-full rounded-full"
-				style="width: {widthPercent(item.seconds)}%; background: {colorForIndex(index)}"
+				style="width: {widthPercent(item.seconds)}%; background: {sliceColor(item, index)}"
 			></div>
 		</div>
 	</div>

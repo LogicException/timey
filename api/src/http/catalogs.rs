@@ -30,6 +30,7 @@ pub struct ArchiveBody {
 pub struct PatchTaskBody {
     name: Option<String>,
     archived: Option<bool>,
+    color: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -55,6 +56,7 @@ pub struct NamedView {
     name: String,
     archived: bool,
     system: bool,
+    color: String,
 }
 
 impl From<NamedRow> for NamedView {
@@ -64,6 +66,7 @@ impl From<NamedRow> for NamedView {
             name: row.name,
             archived: row.archived,
             system: row.is_system,
+            color: row.color,
         }
     }
 }
@@ -129,24 +132,22 @@ pub async fn patch_task(
     Path(id): Path<i64>,
     Json(body): Json<PatchTaskBody>,
 ) -> AppResult<Json<NamedView>> {
-    match (body.name.as_deref(), body.archived) {
-        (None, None) => Err(AppError::Unprocessable(
-            "name oder archived ist erforderlich".into(),
-        )),
-        (Some(name), None) => {
-            let row = catalogs::rename_task(&state.pool, user.id, id, name).await?;
-            Ok(Json(NamedView::from(row)))
-        }
-        (None, Some(archived)) => {
-            let row = catalogs::set_task_archived(&state.pool, user.id, id, archived).await?;
-            Ok(Json(NamedView::from(row)))
-        }
-        (Some(name), Some(archived)) => {
-            catalogs::rename_task(&state.pool, user.id, id, name).await?;
-            let row = catalogs::set_task_archived(&state.pool, user.id, id, archived).await?;
-            Ok(Json(NamedView::from(row)))
-        }
+    if body.name.is_none() && body.archived.is_none() && body.color.is_none() {
+        return Err(AppError::Unprocessable(
+            "name, archived oder color ist erforderlich".into(),
+        ));
     }
+    if let Some(name) = body.name.as_deref() {
+        catalogs::rename_task(&state.pool, user.id, id, name).await?;
+    }
+    if let Some(archived) = body.archived {
+        catalogs::set_task_archived(&state.pool, user.id, id, archived).await?;
+    }
+    if let Some(color) = body.color.as_deref() {
+        catalogs::set_task_color(&state.pool, user.id, id, color).await?;
+    }
+    let row = catalogs::get_task(&state.pool, user.id, id).await?;
+    Ok(Json(NamedView::from(row)))
 }
 
 pub async fn delete_task(

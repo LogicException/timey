@@ -9,6 +9,7 @@ export type ChartSlice = {
 	key: string;
 	label: string;
 	seconds: number;
+	color?: string;
 };
 
 export type ChartGroup = {
@@ -42,6 +43,10 @@ export function colorForIndex(index: number): string {
 	const size = CHART_COLORS.length;
 	const normalized = ((index % size) + size) % size;
 	return CHART_COLORS[normalized] ?? CHART_COLORS[0];
+}
+
+export function sliceColor(slice: ChartSlice, index: number): string {
+	return slice.color ?? colorForIndex(index);
 }
 
 export function sanitizeChartGroupBy(view: ReportChartView, groupBy: ChartGroupBy): ChartGroupBy {
@@ -111,11 +116,13 @@ export function groupEntryDurationsByProjectAndTask(
 function describeGroup(
 	entry: Entry,
 	groupBy: Exclude<ChartGroupBy, 'project_task'>
-): { key: string; label: string } {
+): { key: string; label: string; color?: string } {
 	if (groupBy === 'task') {
+		const color = entry.task_color ?? undefined;
 		return {
 			key: entry.task_id === null ? 'task:none' : `task:${entry.task_id}`,
-			label: entry.task_name ?? 'Ohne Task'
+			label: entry.task_name ?? 'Ohne Task',
+			...(color ? { color } : {})
 		};
 	}
 	return {

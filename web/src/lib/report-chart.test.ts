@@ -5,6 +5,7 @@ import {
 	groupEntryDurations,
 	groupEntryDurationsByProjectAndTask,
 	sanitizeChartGroupBy,
+	sliceColor,
 	slicesToArcs,
 	type ChartSlice
 } from './report-chart.ts';
@@ -371,5 +372,76 @@ describe('colorForIndex', () => {
 		expect(colorForIndex(0)).toBe(colorForIndex(0));
 		expect(colorForIndex(0)).not.toBe(colorForIndex(1));
 		expect(colorForIndex(8)).toBe(colorForIndex(0));
+	});
+});
+
+describe('sliceColor', () => {
+	it('prefers the slice color over the palette', () => {
+		expect(sliceColor({ key: 'task:3', label: 'E-Mail', seconds: 60, color: '#3f9d6c' }, 0)).toBe(
+			'#3f9d6c'
+		);
+	});
+
+	it('falls back to the palette when the slice has no color', () => {
+		expect(sliceColor({ key: 'project:8', label: 'Efa', seconds: 60 }, 1)).toBe(colorForIndex(1));
+	});
+});
+
+describe('task colors on grouped slices', () => {
+	it('uses task_color when grouping by task', () => {
+		const slices = groupEntryDurations(
+			[
+				entry({
+					id: 1,
+					task_id: 3,
+					task_name: 'E-Mail',
+					task_color: '#3f9d6c',
+					start_at: '2026-08-21T12:00:00Z',
+					end_at: '2026-08-21T12:30:00Z'
+				}),
+				entry({
+					id: 2,
+					task_id: 4,
+					task_name: 'Review',
+					task_color: '#d45b49',
+					start_at: '2026-08-21T13:00:00Z',
+					end_at: '2026-08-21T14:00:00Z'
+				})
+			],
+			'task'
+		);
+		expect(slices.find((item) => item.key === 'task:3')?.color).toBe('#3f9d6c');
+		expect(slices.find((item) => item.key === 'task:4')?.color).toBe('#d45b49');
+	});
+
+	it('does not attach a task color when grouping by project', () => {
+		const slices = groupEntryDurations(
+			[
+				entry({
+					task_color: '#3f9d6c',
+					project_id: 8,
+					project_name: 'Efa',
+					start_at: '2026-08-21T12:00:00Z',
+					end_at: '2026-08-21T13:00:00Z'
+				})
+			],
+			'project'
+		);
+		expect(slices[0]?.color).toBeUndefined();
+	});
+
+	it('uses task_color on nested project and task bars', () => {
+		const groups = groupEntryDurationsByProjectAndTask([
+			entry({
+				task_id: 3,
+				task_name: 'E-Mail',
+				task_color: '#3f9d6c',
+				project_id: 8,
+				project_name: 'Efa',
+				start_at: '2026-08-21T12:00:00Z',
+				end_at: '2026-08-21T13:00:00Z'
+			})
+		]);
+		expect(groups[0]?.bars[0]?.color).toBe('#3f9d6c');
 	});
 });

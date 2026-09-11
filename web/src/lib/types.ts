@@ -22,6 +22,7 @@ export type NamedItem = {
 	name: string;
 	archived: boolean;
 	system?: boolean;
+	color?: string;
 };
 
 export type Entry = {
@@ -29,6 +30,7 @@ export type Entry = {
 	task_id: number | null;
 	project_id: number | null;
 	task_name: string | null;
+	task_color?: string | null;
 	project_name: string | null;
 	start_at: string;
 	end_at: string | null;

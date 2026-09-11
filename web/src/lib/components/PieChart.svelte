@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { formatHm } from '$lib/format';
-	import { colorForIndex, slicesToArcs, type ChartSlice } from '$lib/report-chart';
+	import { sliceColor, slicesToArcs, type ChartSlice } from '$lib/report-chart';
 
 	let { slices }: { slices: ChartSlice[] } = $props();
 
@@ -26,9 +26,9 @@
 	<svg viewBox="0 0 200 200" class="mx-auto h-56 w-56 shrink-0" role="img" aria-label="Tortendiagramm">
 		{#each arcs as arc, index}
 			{#if arc.kind === 'full'}
-				<circle cx={cx} cy={cy} r={radius} fill={colorForIndex(index)} />
+				<circle cx={cx} cy={cy} r={radius} fill={sliceColor(arc, index)} />
 			{:else}
-				<path d={arcPath(arc.startDeg, arc.endDeg)} fill={colorForIndex(index)} />
+				<path d={arcPath(arc.startDeg, arc.endDeg)} fill={sliceColor(arc, index)} />
 			{/if}
 		{/each}
 	</svg>
@@ -38,7 +38,7 @@
 				<span class="flex min-w-0 items-center gap-2">
 					<span
 						class="h-2.5 w-2.5 shrink-0 rounded-full"
-						style="background: {colorForIndex(index)}"
+						style="background: {sliceColor(arc, index)}"
 						aria-hidden="true"
 					></span>
 					<span class="truncate">{arc.label}</span>

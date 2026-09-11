@@ -15,7 +15,7 @@ pub async fn close_stale_for_user(
 
     let running = sqlx::query_as::<_, EntryRow>(
         "SELECT e.id, e.user_id, e.task_id, e.project_id, e.start_at, e.end_at, e.status, e.created_at,
-                t.name AS task_name, p.name AS project_name
+                t.name AS task_name, t.color AS task_color, p.name AS project_name
          FROM entries e
          LEFT JOIN tasks t ON t.id = e.task_id
          LEFT JOIN projects p ON p.id = e.project_id

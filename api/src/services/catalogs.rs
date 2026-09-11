@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use sqlx::SqlitePool;
 
 use crate::domain::system_task::{UNBESTIMMT_NAME, is_reserved_task_name};
+use crate::domain::task_color::{parse_hex_color, random_task_color};
 use crate::error::{AppError, AppResult};
 use crate::models::{NamedRow, ProjectRow};
 
@@ -14,6 +15,10 @@ const DEFAULT_TASKS: [&str; 7] = [
     "Qualitätssicherung",
     "Wartung",
 ];
+
+fn next_task_color() -> String {
+    random_task_color(&mut rand::thread_rng())
+}
 
 pub async fn seed_default_tasks(
     pool: &SqlitePool,
@@ -29,10 +34,11 @@ pub async fn seed_default_tasks(
     if existing == 0 {
         for name in DEFAULT_TASKS {
             sqlx::query(
-                "INSERT OR IGNORE INTO tasks (user_id, name, archived, created_at) VALUES (?, ?, 0, ?)",
+                "INSERT OR IGNORE INTO tasks (user_id, name, archived, color, created_at) VALUES (?, ?, 0, ?, ?)",
             )
             .bind(user_id)
             .bind(name)
+            .bind(next_task_color())
             .bind(&created_at)
             .execute(pool)
             .await?;
@@ -48,10 +54,11 @@ async fn seed_unbestimmt(pool: &SqlitePool, user_id: i64, created_at: &str) -> A
         .execute(pool)
         .await?;
     sqlx::query(
-        "INSERT OR IGNORE INTO tasks (user_id, name, archived, is_system, created_at) VALUES (?, ?, 0, 1, ?)",
+        "INSERT OR IGNORE INTO tasks (user_id, name, archived, is_system, color, created_at) VALUES (?, ?, 0, 1, ?, ?)",
     )
     .bind(user_id)
     .bind(UNBESTIMMT_NAME)
+    .bind(next_task_color())
     .bind(created_at)
     .execute(pool)
     .await?;
@@ -129,7 +136,7 @@ pub async fn set_project_archived(
     get_project(pool, id).await
 }
 
-const TASK_COLUMNS: &str = "id, user_id, name, archived, is_system, created_at";
+const TASK_COLUMNS: &str = "id, user_id, name, archived, is_system, color, created_at";
 
 pub async fn list_tasks(
     pool: &SqlitePool,
@@ -165,13 +172,16 @@ pub async fn create_task(
 ) -> AppResult<NamedRow> {
     let name = validate_name(name)?;
     let created_at = now.to_rfc3339();
-    let result =
-        sqlx::query("INSERT INTO tasks (user_id, name, archived, created_at) VALUES (?, ?, 0, ?)")
-            .bind(user_id)
-            .bind(&name)
-            .bind(&created_at)
-            .execute(pool)
-            .await;
+    let color = next_task_color();
+    let result = sqlx::query(
+        "INSERT INTO tasks (user_id, name, archived, color, created_at) VALUES (?, ?, 0, ?, ?)",
+    )
+    .bind(user_id)
+    .bind(&name)
+    .bind(&color)
+    .bind(&created_at)
+    .execute(pool)
+    .await;
 
     match result {
         Ok(done) => get_task(pool, user_id, done.last_insert_rowid()).await,
@@ -184,7 +194,7 @@ pub async fn create_task(
 
 pub async fn get_task(pool: &SqlitePool, user_id: i64, id: i64) -> AppResult<NamedRow> {
     sqlx::query_as::<_, NamedRow>(
-        "SELECT id, user_id, name, archived, is_system, created_at FROM tasks WHERE id = ? AND user_id = ?",
+        "SELECT id, user_id, name, archived, is_system, color, created_at FROM tasks WHERE id = ? AND user_id = ?",
     )
     .bind(id)
     .bind(user_id)
@@ -237,6 +247,27 @@ pub async fn rename_task(
     }
 }
 
+pub async fn set_task_color(
+    pool: &SqlitePool,
+    user_id: i64,
+    id: i64,
+    color: &str,
+) -> AppResult<NamedRow> {
+    reject_system_mutation(&get_task(pool, user_id, id).await?)?;
+    let color =
+        parse_hex_color(color).map_err(|err| AppError::Unprocessable(err.message().into()))?;
+    let done = sqlx::query("UPDATE tasks SET color = ? WHERE id = ? AND user_id = ?")
+        .bind(&color)
+        .bind(id)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    if done.rows_affected() == 0 {
+        return Err(AppError::NotFound);
+    }
+    get_task(pool, user_id, id).await
+}
+
 pub async fn delete_task(pool: &SqlitePool, user_id: i64, id: i64) -> AppResult<()> {
     let task = get_task(pool, user_id, id).await?;
     if task.is_system {
@@ -270,7 +301,7 @@ pub async fn delete_task(pool: &SqlitePool, user_id: i64, id: i64) -> AppResult<
 
 async fn get_system_task(pool: &SqlitePool, user_id: i64) -> AppResult<NamedRow> {
     sqlx::query_as::<_, NamedRow>(
-        "SELECT id, user_id, name, archived, is_system, created_at FROM tasks WHERE user_id = ? AND is_system = 1",
+        "SELECT id, user_id, name, archived, is_system, color, created_at FROM tasks WHERE user_id = ? AND is_system = 1",
     )
     .bind(user_id)
     .fetch_optional(pool)

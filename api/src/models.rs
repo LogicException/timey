@@ -108,6 +108,7 @@ pub struct NamedRow {
     pub name: String,
     pub archived: bool,
     pub is_system: bool,
+    pub color: String,
     pub created_at: String,
 }
 
@@ -122,6 +123,7 @@ pub struct EntryRow {
     pub status: String,
     pub created_at: String,
     pub task_name: Option<String>,
+    pub task_color: Option<String>,
     pub project_name: Option<String>,
 }
 

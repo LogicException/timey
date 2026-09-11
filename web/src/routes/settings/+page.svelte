@@ -34,6 +34,19 @@
 		}
 	}
 
+	async function setColor(item: NamedItem, color: string) {
+		error = '';
+		try {
+			await api(`/api/tasks/${item.id}`, {
+				method: 'PATCH',
+				body: JSON.stringify({ color })
+			});
+			await load();
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Fehler';
+		}
+	}
+
 	async function archive(item: NamedItem) {
 		await api(`/api/tasks/${item.id}`, {
 			method: 'PATCH',
@@ -126,6 +139,15 @@
 	<ul class="space-y-2">
 		{#each tasks as item}
 			<li class="flex items-center justify-between gap-3 text-sm">
+				<input
+					type="color"
+					class="h-7 w-8 shrink-0 cursor-pointer rounded border border-line bg-transparent p-0"
+					value={item.color ?? '#6b8cae'}
+					aria-label="Farbe für {item.name}"
+					onchange={(event) => {
+						void setColor(item, event.currentTarget.value);
+					}}
+				/>
 				{#if editingId === item.id}
 					<input
 						class="panel min-w-0 flex-1 rounded-md px-2 py-1"

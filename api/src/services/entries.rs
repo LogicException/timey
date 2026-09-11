@@ -43,20 +43,16 @@ pub async fn list_entries(
     let end = crate::domain::same_day::start_of_day(end_exclusive_date, APP_TZ)
         .ok_or_else(|| AppError::Internal("Ende des Tages ungültig".into()))?;
 
-    let rows = sqlx::query_as::<_, EntryRow>(
-        "SELECT e.id, e.user_id, e.task_id, e.project_id, e.start_at, e.end_at, e.status, e.created_at,
-                t.name AS task_name, p.name AS project_name
-         FROM entries e
-         LEFT JOIN tasks t ON t.id = e.task_id
-         LEFT JOIN projects p ON p.id = e.project_id
-         WHERE e.user_id = ? AND e.start_at >= ? AND e.start_at < ?
-         ORDER BY e.start_at DESC",
-    )
-    .bind(user_id)
-    .bind(start.to_rfc3339())
-    .bind(end.to_rfc3339())
-    .fetch_all(pool)
-    .await?;
+    let sql = format!(
+        "{} ORDER BY e.start_at DESC",
+        entry_select_sql("e.user_id = ? AND e.start_at >= ? AND e.start_at < ?")
+    );
+    let rows = sqlx::query_as::<_, EntryRow>(&sql)
+        .bind(user_id)
+        .bind(start.to_rfc3339())
+        .bind(end.to_rfc3339())
+        .fetch_all(pool)
+        .await?;
 
     Ok(rows
         .into_iter()
@@ -441,7 +437,7 @@ async fn ensure_no_overlap(
 fn entry_select_sql(where_clause: &str) -> String {
     format!(
         "SELECT e.id, e.user_id, e.task_id, e.project_id, e.start_at, e.end_at, e.status, e.created_at,
-                t.name AS task_name, p.name AS project_name
+                t.name AS task_name, t.color AS task_color, p.name AS project_name
          FROM entries e
          LEFT JOIN tasks t ON t.id = e.task_id
          LEFT JOIN projects p ON p.id = e.project_id
@@ -554,6 +550,7 @@ mod tests {
             status: "complete".into(),
             created_at: start_at.to_string(),
             task_name: task_name.map(str::to_string),
+            task_color: None,
             project_name: project_name.map(str::to_string),
         }
     }

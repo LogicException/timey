@@ -17,7 +17,7 @@
 		startOfWeek
 	} from '$lib/dates';
 	import { applyBerlinTimes, entryToEditState, savePayload } from '$lib/week-entry';
-	import { weekTimeGridLayout } from '$lib/week-calendar';
+	import { calendarEventColors, weekTimeGridLayout } from '$lib/week-calendar';
 	import { workIntervalEvents } from '$lib/week-work-intervals';
 	import type { Entry, NamedItem, UserSettings, WorkDaySummary } from '$lib/types';
 	import { DEFAULT_WORK_END, DEFAULT_WORK_START, weekSlotTimes } from '$lib/working-hours';
@@ -99,7 +99,8 @@
 				id: String(entry.id),
 				title: eventTitle(entry),
 				start: entry.start_at,
-				end: entry.end_at
+				end: entry.end_at,
+				...calendarEventColors(entry.task_color)
 			});
 		}
 		for (const event of workIntervalEvents(workDays)) {
