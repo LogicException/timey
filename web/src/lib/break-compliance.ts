@@ -9,6 +9,13 @@ export type BreakViolation = {
 	intervalIds: number[];
 };
 
+export const BREAK_COMPLIANCE_DISCLAIMER = 'Hinweis nach ArbZG § 4, keine Rechtsberatung.';
+
+export function breakWarningTooltip(violations: ReadonlyArray<BreakViolation>): string | null {
+	if (violations.length === 0) return null;
+	return [...violations.map((item) => item.message), BREAK_COMPLIANCE_DISCLAIMER].join('\n');
+}
+
 const MIN_QUALIFYING_BREAK_SECONDS = 15 * 60;
 const MAX_CONTINUOUS_SECONDS = 6 * 60 * 60;
 const SIX_HOURS_SECONDS = 6 * 60 * 60;

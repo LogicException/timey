@@ -42,3 +42,9 @@ export function saveWorkPayload(day: string, form: DayWorkForm, open: boolean): 
 export function closeWorkModalState(): DayWorkModalState {
 	return { open: false, editing: null };
 }
+
+export function workIntervalsNewestFirst(
+	intervals: ReadonlyArray<WorkInterval>
+): WorkInterval[] {
+	return [...intervals].sort((left, right) => Date.parse(right.start_at) - Date.parse(left.start_at));
+}

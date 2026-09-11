@@ -2,12 +2,12 @@
 	import { getContext } from 'svelte';
 	import { api } from '$lib/api';
 	import { evaluateBreakCompliance } from '$lib/break-compliance';
-	import BreakWarnings from '$lib/components/BreakWarnings.svelte';
+	import BreakWarningMark from '$lib/components/BreakWarningMark.svelte';
 	import DateField from '$lib/components/DateField.svelte';
 	import NamedSelect from '$lib/components/NamedSelect.svelte';
 	import TimeField from '$lib/components/TimeField.svelte';
 	import { closeModalState, entryToForm, savePayload } from '$lib/day-entry';
-	import { closeWorkModalState, intervalToForm, saveWorkPayload } from '$lib/day-work';
+	import { closeWorkModalState, intervalToForm, saveWorkPayload, workIntervalsNewestFirst } from '$lib/day-work';
 	import { addDays, formatBerlinDate, formatBerlinTime } from '$lib/dates';
 	import { durationBetween, formatHm, totalDurationSeconds } from '$lib/format';
 	import { latestStopIso, suggestedCreateClock } from '$lib/suggested-create-times';
@@ -45,6 +45,7 @@
 
 	const workIntervals = $derived(workDays.flatMap((item) => item.intervals ?? []));
 	const breakViolations = $derived(evaluateBreakCompliance(workIntervals));
+	const workRows = $derived(workIntervalsNewestFirst(workIntervals));
 
 	async function refreshAfterWorkChange() {
 		await load();
@@ -240,50 +241,49 @@
 		<p class="text-sm text-stop">{error}</p>
 	{/if}
 
-	<div class="panel overflow-hidden rounded-xl">
-		<div class="flex items-center justify-between bg-panel-2 px-4 py-2">
-			<p class="text-xs uppercase tracking-wider text-muted">Arbeitszeit</p>
+	<div class="panel rounded-xl">
+		<div class="flex items-center justify-between rounded-t-xl bg-panel-2 px-4 py-2">
+			<BreakWarningMark violations={breakViolations} tooltipId="day-work-break-warning">
+				<p class="text-xs uppercase tracking-wider text-muted">Arbeitszeit</p>
+			</BreakWarningMark>
 			<button class="text-xs font-semibold text-amber" onclick={openWorkCreate}>Arbeitszeit erfassen</button>
 		</div>
-		<table class="w-full text-sm">
-			<thead class="text-left text-xs uppercase tracking-wider text-muted">
-				<tr>
-					<th class="px-4 py-2">Von</th>
-					<th class="px-4 py-2">Bis</th>
-					<th class="px-4 py-2">Dauer</th>
-					<th class="px-4 py-2"></th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each workIntervals as interval}
-					<tr class="border-t border-line">
-						<td class="clock-face px-4 py-2">{formatBerlinTime(new Date(interval.start_at))}</td>
-						<td class="clock-face px-4 py-2"
-							>{interval.open ? 'läuft' : formatBerlinTime(new Date(interval.end_at))}</td
-						>
-						<td class="clock-face px-4 py-2">{formatHm(durationBetween(interval.start_at, interval.end_at))}</td>
-						<td class="px-4 py-2 text-right">
-							<button class="text-xs text-muted" onclick={() => editWork(interval)}>Bearbeiten</button>
-							{#if !interval.open}
-								<button class="ml-2 text-xs text-stop" onclick={() => removeWork(interval.id)}>Löschen</button>
-							{/if}
-						</td>
+		<div class="overflow-hidden rounded-b-xl">
+			<table class="w-full text-sm">
+				<thead class="text-left text-xs uppercase tracking-wider text-muted">
+					<tr>
+						<th class="px-4 py-2">Von</th>
+						<th class="px-4 py-2">Bis</th>
+						<th class="px-4 py-2">Dauer</th>
+						<th class="px-4 py-2"></th>
 					</tr>
-				{/each}
-			</tbody>
-			<tfoot>
-				<tr class="border-t border-line bg-panel-2">
-					<td class="px-4 py-2 text-xs uppercase tracking-wider text-muted" colspan="2">Summe</td>
-					<td class="clock-face px-4 py-2">{formatHm(totalWorkSeconds(workDays))}</td>
-					<td></td>
-				</tr>
-			</tfoot>
-		</table>
-		{#if breakViolations.length > 0}
-			<div class="border-t border-line px-4 py-3">
-				<BreakWarnings violations={breakViolations} compact />
-			</div>
-		{/if}
+				</thead>
+				<tbody>
+					{#each workRows as interval}
+						<tr class="border-t border-line">
+							<td class="clock-face px-4 py-2">{formatBerlinTime(new Date(interval.start_at))}</td>
+							<td class="clock-face px-4 py-2"
+								>{interval.open ? 'läuft' : formatBerlinTime(new Date(interval.end_at))}</td
+							>
+							<td class="clock-face px-4 py-2">{formatHm(durationBetween(interval.start_at, interval.end_at))}</td>
+							<td class="px-4 py-2 text-right">
+								<button class="text-xs text-muted" onclick={() => editWork(interval)}>Bearbeiten</button>
+								{#if !interval.open}
+									<button class="ml-2 text-xs text-stop" onclick={() => removeWork(interval.id)}>Löschen</button>
+								{/if}
+							</td>
+						</tr>
+					{/each}
+				</tbody>
+				<tfoot>
+					<tr class="border-t border-line bg-panel-2">
+						<td class="px-4 py-2 text-xs uppercase tracking-wider text-muted" colspan="2">Summe</td>
+						<td class="clock-face px-4 py-2">{formatHm(totalWorkSeconds(workDays))}</td>
+						<td></td>
+					</tr>
+				</tfoot>
+			</table>
+		</div>
 	</div>
 
 	<div class="panel overflow-hidden rounded-xl">

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { BreakViolation } from '$lib/break-compliance';
+	import { BREAK_COMPLIANCE_DISCLAIMER, type BreakViolation } from '$lib/break-compliance';
 
 	let {
 		violations,
@@ -15,6 +15,6 @@
 		{#each violations as violation (violation.kind + violation.message)}
 			<p class={compact ? 'text-xs text-stop' : 'text-sm text-stop'}>{violation.message}</p>
 		{/each}
-		<p class="text-[11px] text-muted">Hinweis nach ArbZG § 4, keine Rechtsberatung.</p>
+		<p class="text-[11px] text-muted">{BREAK_COMPLIANCE_DISCLAIMER}</p>
 	</div>
 {/if}

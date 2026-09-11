@@ -5,7 +5,6 @@
 	import { page } from '$app/state';
 	import { api } from '$lib/api';
 	import { fetchMe, logout } from '$lib/auth';
-	import Timers from '$lib/components/Timers.svelte';
 	import WorkTransportBar from '$lib/components/WorkTransportBar.svelte';
 	import { setContext } from 'svelte';
 	import { REFRESH_TIMERS_KEY, WORK_CHANGED_KEY, createWorkChangedBus } from '$lib/timers-context';
@@ -80,7 +79,14 @@
 {:else if publicPath}
 	{@render children()}
 {:else if user}
-	<WorkTransportBar {work} onRefresh={refreshTimers} />
+	<WorkTransportBar
+		{work}
+		{workIntervals}
+		{timer}
+		{tasks}
+		{projects}
+		onRefresh={refreshTimers}
+	/>
 	<div class="mx-auto flex min-h-screen max-w-6xl flex-col gap-4 px-4 py-6">
 		<header class="flex flex-wrap items-end justify-between gap-4">
 			<div>
@@ -107,7 +113,6 @@
 				>
 			</nav>
 		</header>
-		<Timers {work} {workIntervals} {timer} {tasks} {projects} onRefresh={refreshTimers} />
 		<main class="flex-1">{@render children()}</main>
 	</div>
 {/if}

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+	breakWarningTooltip,
 	continuousViolationIntervalIds,
 	daysWithBreakViolations,
 	evaluateBreakCompliance
@@ -146,6 +147,27 @@ describe('daysWithBreakViolations', () => {
 				}
 			]).map((day) => day.local_date)
 		).toEqual(['2026-08-22']);
+	});
+});
+
+describe('breakWarningTooltip', () => {
+	it('returns null when there are no violations', () => {
+		expect(breakWarningTooltip([])).toBeNull();
+	});
+
+	it('joins messages with the legal disclaimer', () => {
+		expect(
+			breakWarningTooltip([
+				{ kind: 'continuous_too_long', message: 'Durchgehende Arbeitszeit 6:09 ohne Pause (höchstens 6:00)', intervalIds: [1] },
+				{ kind: 'break_too_short', message: 'Pause 0:06 zählt nicht (mindestens 0:15)', intervalIds: [1, 2] }
+			])
+		).toBe(
+			[
+				'Durchgehende Arbeitszeit 6:09 ohne Pause (höchstens 6:00)',
+				'Pause 0:06 zählt nicht (mindestens 0:15)',
+				'Hinweis nach ArbZG § 4, keine Rechtsberatung.'
+			].join('\n')
+		);
 	});
 });
 
