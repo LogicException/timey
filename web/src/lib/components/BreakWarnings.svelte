@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { BREAK_COMPLIANCE_DISCLAIMER, type BreakViolation } from '$lib/break-compliance';
+	import { BREAK_COMPLIANCE_DISCLAIMER, breakViolationKey, type BreakViolation } from '$lib/break-compliance';
 
 	let {
 		violations,
@@ -12,7 +12,7 @@
 
 {#if violations.length > 0}
 	<div class={compact ? 'space-y-1' : 'space-y-1 rounded-md border border-stop/40 px-3 py-2'}>
-		{#each violations as violation (violation.kind + violation.message)}
+		{#each violations as violation (breakViolationKey(violation))}
 			<p class={compact ? 'text-xs text-stop' : 'text-sm text-stop'}>{violation.message}</p>
 		{/each}
 		<p class="text-[11px] text-muted">{BREAK_COMPLIANCE_DISCLAIMER}</p>

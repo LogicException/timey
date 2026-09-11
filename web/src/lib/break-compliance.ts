@@ -16,6 +16,10 @@ export function breakWarningTooltip(violations: ReadonlyArray<BreakViolation>): 
 	return [...violations.map((item) => item.message), BREAK_COMPLIANCE_DISCLAIMER].join('\n');
 }
 
+export function breakViolationKey(violation: BreakViolation): string {
+	return `${violation.kind}:${violation.intervalIds.join(',')}`;
+}
+
 const MIN_QUALIFYING_BREAK_SECONDS = 15 * 60;
 const MAX_CONTINUOUS_SECONDS = 6 * 60 * 60;
 const SIX_HOURS_SECONDS = 6 * 60 * 60;

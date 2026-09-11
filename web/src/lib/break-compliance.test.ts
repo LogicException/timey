@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+	breakViolationKey,
 	breakWarningTooltip,
 	continuousViolationIntervalIds,
 	daysWithBreakViolations,
@@ -128,6 +129,18 @@ describe('evaluateBreakCompliance', () => {
 			'continuous_too_long',
 			'insufficient_break'
 		]);
+	});
+
+	it('keeps distinct keys when two short pauses share a message', () => {
+		const result = evaluateBreakCompliance([
+			interval(1, '2026-08-21T06:00:00Z', '2026-08-21T10:00:00Z'),
+			interval(2, '2026-08-21T10:00:10Z', '2026-08-21T12:00:00Z'),
+			interval(3, '2026-08-21T12:00:10Z', '2026-08-21T14:00:00Z')
+		]);
+		const short = result.filter((item) => item.kind === 'break_too_short');
+		expect(short).toHaveLength(2);
+		expect(short[0]?.message).toBe(short[1]?.message);
+		expect(new Set(short.map(breakViolationKey)).size).toBe(2);
 	});
 });
 
