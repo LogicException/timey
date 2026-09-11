@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { getContext } from 'svelte';
 	import { api } from '$lib/api';
 	import BarChart from '$lib/components/BarChart.svelte';
 	import DateField from '$lib/components/DateField.svelte';
@@ -21,6 +22,7 @@
 		sanitizeChartGroupBy,
 		type ChartGroupBy
 	} from '$lib/report-chart';
+	import { WORK_CHANGED_KEY, type WorkChangedBus } from '$lib/timers-context';
 	import type { Entry, NamedItem, WorkDaySummary } from '$lib/types';
 
 	type ReportView = 'table' | 'bar' | 'pie';
@@ -50,6 +52,8 @@
 	let error = $state('');
 	let view = $state<ReportView>('table');
 	let groupBy = $state<ChartGroupBy>('task');
+
+	const workChanged = getContext<WorkChangedBus>(WORK_CHANGED_KEY);
 
 	const flatGroupBy = $derived(groupBy === 'project_task' ? 'task' : groupBy);
 	const slices = $derived(groupEntryDurations(entries, flatGroupBy));
@@ -99,6 +103,14 @@
 		void selectedProjects;
 		void load().catch((err) => {
 			error = err instanceof Error ? err.message : 'Laden fehlgeschlagen';
+		});
+	});
+
+	$effect(() => {
+		return workChanged.subscribe(() => {
+			void load().catch((err) => {
+				error = err instanceof Error ? err.message : 'Laden fehlgeschlagen';
+			});
 		});
 	});
 

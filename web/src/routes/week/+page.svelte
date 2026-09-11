@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { getContext, onMount } from 'svelte';
 	import { Calendar } from '@fullcalendar/core';
 	import timeGridPlugin from '@fullcalendar/timegrid';
 	import interactionPlugin from '@fullcalendar/interaction';
@@ -10,15 +10,18 @@
 	import NamedSelect from '$lib/components/NamedSelect.svelte';
 	import TimeField from '$lib/components/TimeField.svelte';
 	import {
+		berlinLocalToUtc,
 		endOfWeek,
 		formatBerlinDate,
 		isoToBerlinDate,
 		isoToBerlinHoursMinutes,
 		startOfWeek
 	} from '$lib/dates';
+	import { latestStopIso, suggestedCreateClock } from '$lib/suggested-create-times';
 	import { applyBerlinTimes, entryToEditState, savePayload } from '$lib/week-entry';
 	import { calendarEventColors, weekTimeGridLayout } from '$lib/week-calendar';
 	import { workIntervalEvents } from '$lib/week-work-intervals';
+	import { WORK_CHANGED_KEY, type WorkChangedBus } from '$lib/timers-context';
 	import type { Entry, NamedItem, UserSettings, WorkDaySummary } from '$lib/types';
 	import { DEFAULT_WORK_END, DEFAULT_WORK_START, weekSlotTimes } from '$lib/working-hours';
 
@@ -39,6 +42,9 @@
 	let taskId = $state<number | null>(null);
 	let projectId = $state<number | null>(null);
 	let breakWarningDays = $state<DayBreakWarnings[]>([]);
+	let slotMinutes: number | null = null;
+
+	const workChanged = getContext<WorkChangedBus>(WORK_CHANGED_KEY);
 
 	async function loadRange(from: string, to: string): Promise<Entry[]> {
 		return api(`/api/entries?from=${from}&to=${to}`);
@@ -65,6 +71,23 @@
 		open = false;
 		editingId = null;
 		error = '';
+	}
+
+	async function openCreateForDay(day: string) {
+		const dayEnds = [...entriesById.values()]
+			.filter((entry) => isoToBerlinDate(entry.start_at) === day)
+			.map((entry) => entry.end_at);
+		const stop = latestStopIso(dayEnds);
+		const startSource = stop ?? (await api<{ now: string }>('/api/health')).now;
+		const clock = suggestedCreateClock(startSource, slotMinutes);
+		startIso = berlinLocalToUtc(day, clock.fromH, clock.fromM).toISOString();
+		endIso = berlinLocalToUtc(day, clock.toH, clock.toM).toISOString();
+		taskId = tasks[0]?.id ?? null;
+		projectId = null;
+		editingId = null;
+		syncTimeFields();
+		error = '';
+		open = true;
 	}
 
 	function openEdit(id: number) {
@@ -117,6 +140,7 @@
 				const settings = await api<UserSettings>('/api/settings');
 				workStart = settings.work_start;
 				workEnd = settings.work_end;
+				slotMinutes = settings.slot_minutes;
 			} catch {
 				// keep defaults
 			}
@@ -139,14 +163,7 @@
 				height: 'auto',
 				headerToolbar: { left: 'prev,next today', center: 'title', right: '' },
 				select: (info) => {
-					startIso = info.start.toISOString();
-					endIso = info.end.toISOString();
-					taskId = tasks[0]?.id ?? null;
-					projectId = null;
-					editingId = null;
-					syncTimeFields();
-					error = '';
-					open = true;
+					void openCreateForDay(formatBerlinDate(info.start));
 					calendar?.unselect();
 				},
 				eventDidMount: (info) => {
@@ -182,6 +199,12 @@
 			destroyed = true;
 			calendar?.destroy();
 		};
+	});
+
+	$effect(() => {
+		return workChanged.subscribe(() => {
+			void refreshEvents();
+		});
 	});
 
 	async function saveEntry() {

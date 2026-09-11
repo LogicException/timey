@@ -3,6 +3,7 @@
 	import TimeField from '$lib/components/TimeField.svelte';
 	import type { DefaultView } from '$lib/default-view';
 	import type { UserSettings } from '$lib/types';
+	import { DEFAULT_SLOT_MINUTES, parseSlotMinutesInput } from '$lib/slot-minutes';
 	import { DEFAULT_WORK_END, DEFAULT_WORK_START, joinHm, splitHm } from '$lib/working-hours';
 
 	let startH = $state(7);
@@ -10,6 +11,7 @@
 	let endH = $state(16);
 	let endM = $state(15);
 	let defaultView = $state<DefaultView>('day');
+	let slotMinutesInput = $state('');
 	let error = $state('');
 	let saved = $state(false);
 
@@ -21,6 +23,7 @@
 		endH = end.hours;
 		endM = end.minutes;
 		defaultView = settings.default_view;
+		slotMinutesInput = settings.slot_minutes == null ? '' : String(settings.slot_minutes);
 	}
 
 	async function load() {
@@ -34,7 +37,8 @@
 			apply({
 				work_start: DEFAULT_WORK_START,
 				work_end: DEFAULT_WORK_END,
-				default_view: 'day'
+				default_view: 'day',
+				slot_minutes: null
 			});
 		});
 	});
@@ -42,13 +46,19 @@
 	async function save() {
 		error = '';
 		saved = false;
+		const parsed = parseSlotMinutesInput(slotMinutesInput);
+		if (!parsed.ok) {
+			error = 'Slotdauer muss eine positive ganze Zahl in Minuten sein';
+			return;
+		}
 		try {
 			const settings = await api<UserSettings>('/api/settings', {
 				method: 'PATCH',
 				body: JSON.stringify({
 					work_start: joinHm(startH, startM),
 					work_end: joinHm(endH, endM),
-					default_view: defaultView
+					default_view: defaultView,
+					slot_minutes: parsed.value
 				})
 			});
 			apply(settings);
@@ -90,6 +100,23 @@
 				Wochenansicht
 			</label>
 		</fieldset>
+		<div class="space-y-3">
+			<h3 class="text-base">Üblicher Zeitslot</h3>
+			<p class="text-sm text-muted">
+				Beim Erfassen neuer Einträge wird das Ende um diese Dauer nach dem Start vorbelegt. Leer
+				bedeutet {DEFAULT_SLOT_MINUTES} Minuten.
+			</p>
+			<label class="block">
+				<p class="mb-1 text-xs uppercase tracking-[0.18em] text-muted">Minuten</p>
+				<input
+					class="panel clock-face w-28 rounded-md px-3 py-2 text-lg outline-none"
+					type="text"
+					inputmode="numeric"
+					placeholder={String(DEFAULT_SLOT_MINUTES)}
+					bind:value={slotMinutesInput}
+				/>
+			</label>
+		</div>
 		{#if error}
 			<p class="text-sm text-stop">{error}</p>
 		{/if}

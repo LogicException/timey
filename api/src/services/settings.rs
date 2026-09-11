@@ -1,6 +1,7 @@
 use sqlx::{FromRow, SqlitePool};
 
 use crate::domain::default_view::DefaultView;
+use crate::domain::slot_minutes::SlotMinutes;
 use crate::domain::working_hours::WorkingHours;
 use crate::error::{AppError, AppResult};
 
@@ -8,6 +9,7 @@ use crate::error::{AppError, AppResult};
 pub struct UserSettings {
     pub hours: WorkingHours,
     pub default_view: DefaultView,
+    pub slot_minutes: SlotMinutes,
 }
 
 #[derive(Debug, FromRow)]
@@ -15,6 +17,7 @@ struct SettingsRow {
     work_start_minutes: i64,
     work_end_minutes: i64,
     default_view: String,
+    slot_minutes: Option<i64>,
 }
 
 impl SettingsRow {
@@ -24,10 +27,21 @@ impl SettingsRow {
         let default_view = DefaultView::parse(&self.default_view).ok_or_else(|| {
             AppError::Internal(format!("ungültige Standardansicht: {}", self.default_view))
         })?;
+        let slot_minutes = SlotMinutes::parse(self.slot_minutes)
+            .map_err(|err| AppError::Internal(err.message().into()))?;
         Ok(UserSettings {
             hours,
             default_view,
+            slot_minutes,
         })
+    }
+}
+
+fn default_settings() -> UserSettings {
+    UserSettings {
+        hours: WorkingHours::default(),
+        default_view: DefaultView::default(),
+        slot_minutes: SlotMinutes::default(),
     }
 }
 
@@ -50,7 +64,7 @@ pub async fn insert_defaults(pool: &SqlitePool, user_id: i64) -> AppResult<()> {
 
 pub async fn get_or_default(pool: &SqlitePool, user_id: i64) -> AppResult<UserSettings> {
     let row = sqlx::query_as::<_, SettingsRow>(
-        "SELECT work_start_minutes, work_end_minutes, default_view
+        "SELECT work_start_minutes, work_end_minutes, default_view, slot_minutes
          FROM user_settings WHERE user_id = ?",
     )
     .bind(user_id)
@@ -62,10 +76,7 @@ pub async fn get_or_default(pool: &SqlitePool, user_id: i64) -> AppResult<UserSe
     }
 
     insert_defaults(pool, user_id).await?;
-    Ok(UserSettings {
-        hours: WorkingHours::default(),
-        default_view: DefaultView::default(),
-    })
+    Ok(default_settings())
 }
 
 pub async fn update(
@@ -74,6 +85,7 @@ pub async fn update(
     work_start: &str,
     work_end: &str,
     default_view: Option<&str>,
+    slot_minutes: Option<Option<i64>>,
 ) -> AppResult<UserSettings> {
     let hours = WorkingHours::parse(work_start, work_end)
         .map_err(|err| AppError::Unprocessable(err.message().into()))?;
@@ -84,22 +96,30 @@ pub async fn update(
         })?,
         None => current.default_view,
     };
+    let slot_minutes = match slot_minutes {
+        Some(value) => SlotMinutes::parse(value)
+            .map_err(|err| AppError::Unprocessable(err.message().into()))?,
+        None => current.slot_minutes,
+    };
     sqlx::query(
-        "INSERT INTO user_settings (user_id, work_start_minutes, work_end_minutes, default_view)
-         VALUES (?, ?, ?, ?)
+        "INSERT INTO user_settings (user_id, work_start_minutes, work_end_minutes, default_view, slot_minutes)
+         VALUES (?, ?, ?, ?, ?)
          ON CONFLICT(user_id) DO UPDATE SET
             work_start_minutes = excluded.work_start_minutes,
             work_end_minutes = excluded.work_end_minutes,
-            default_view = excluded.default_view",
+            default_view = excluded.default_view,
+            slot_minutes = excluded.slot_minutes",
     )
     .bind(user_id)
     .bind(hours.start_minutes)
     .bind(hours.end_minutes)
     .bind(default_view.as_str())
+    .bind(slot_minutes.stored())
     .execute(pool)
     .await?;
     Ok(UserSettings {
         hours,
         default_view,
+        slot_minutes,
     })
 }

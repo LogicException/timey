@@ -6,8 +6,9 @@
 	import { api } from '$lib/api';
 	import { fetchMe, logout } from '$lib/auth';
 	import Timers from '$lib/components/Timers.svelte';
+	import WorkTransportBar from '$lib/components/WorkTransportBar.svelte';
 	import { setContext } from 'svelte';
-	import { REFRESH_TIMERS_KEY } from '$lib/timers-context';
+	import { REFRESH_TIMERS_KEY, WORK_CHANGED_KEY, createWorkChangedBus } from '$lib/timers-context';
 	import { formatBerlinDate } from '$lib/dates';
 	import type { Entry, NamedItem, User, WorkDaySummary, WorkInterval, WorkSnapshot } from '$lib/types';
 
@@ -22,6 +23,8 @@
 	let projects = $state<NamedItem[]>([]);
 
 	const publicPath = $derived(page.url.pathname === '/login');
+
+	const workChanged = createWorkChangedBus();
 
 	async function refreshSession() {
 		user = await fetchMe();
@@ -53,9 +56,11 @@
 		tasks = taskRes;
 		projects = projectRes;
 		workIntervals = workDays.flatMap((day) => day.intervals ?? []);
+		await workChanged.notify();
 	}
 
 	setContext(REFRESH_TIMERS_KEY, refreshTimers);
+	setContext(WORK_CHANGED_KEY, workChanged);
 
 	$effect(() => {
 		void page.url.pathname;
@@ -75,6 +80,7 @@
 {:else if publicPath}
 	{@render children()}
 {:else if user}
+	<WorkTransportBar {work} onRefresh={refreshTimers} />
 	<div class="mx-auto flex min-h-screen max-w-6xl flex-col gap-4 px-4 py-6">
 		<header class="flex flex-wrap items-end justify-between gap-4">
 			<div>

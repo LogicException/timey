@@ -28,6 +28,8 @@ async fn get_or_default_inserts_missing_row() {
     assert_eq!(loaded.hours.work_start(), "07:30");
     assert_eq!(loaded.hours.work_end(), "16:15");
     assert_eq!(loaded.default_view, timey_api::domain::DefaultView::Day);
+    assert_eq!(loaded.slot_minutes.stored(), None);
+    assert_eq!(loaded.slot_minutes.effective(), 60);
 
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM user_settings WHERE user_id = ?")
         .bind(user.id)

@@ -1,6 +1,6 @@
 use axum::Json;
 use axum::extract::State;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::error::AppResult;
 use crate::http::extractors::CurrentUser;
@@ -12,6 +12,7 @@ pub struct SettingsView {
     work_start: String,
     work_end: String,
     default_view: String,
+    slot_minutes: Option<i64>,
 }
 
 impl From<UserSettings> for SettingsView {
@@ -20,8 +21,17 @@ impl From<UserSettings> for SettingsView {
             work_start: settings.hours.work_start(),
             work_end: settings.hours.work_end(),
             default_view: settings.default_view.as_str().to_string(),
+            slot_minutes: settings.slot_minutes.stored(),
         }
     }
+}
+
+fn deserialize_double_option<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Ok(Some(Option::<T>::deserialize(deserializer)?))
 }
 
 #[derive(Deserialize)]
@@ -29,6 +39,8 @@ pub struct PatchSettings {
     work_start: String,
     work_end: String,
     default_view: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_double_option")]
+    slot_minutes: Option<Option<i64>>,
 }
 
 pub async fn get_settings(
@@ -50,6 +62,7 @@ pub async fn patch_settings(
         &body.work_start,
         &body.work_end,
         body.default_view.as_deref(),
+        body.slot_minutes,
     )
     .await?;
     Ok(Json(SettingsView::from(settings)))

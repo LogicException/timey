@@ -10,6 +10,7 @@ export type UserSettings = {
 	work_start: string;
 	work_end: string;
 	default_view: 'day' | 'week';
+	slot_minutes: number | null;
 };
 
 export type AuthConfig = {

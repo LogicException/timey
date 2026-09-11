@@ -108,6 +108,11 @@ async fn health_returns_ok() {
     let (status, body, _) = ctx.request("GET", "/api/health", None, None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["status"], "ok");
+    let now = body["now"].as_str().expect("now");
+    assert!(
+        chrono::DateTime::parse_from_rfc3339(now).is_ok(),
+        "{now}"
+    );
 }
 
 #[tokio::test]
@@ -116,6 +121,11 @@ async fn health_db_returns_ok() {
     let (status, body, _) = ctx.request("GET", "/api/health/db", None, None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["status"], "ok");
+    let now = body["now"].as_str().expect("now");
+    assert!(
+        chrono::DateTime::parse_from_rfc3339(now).is_ok(),
+        "{now}"
+    );
 }
 
 #[tokio::test]
@@ -693,6 +703,8 @@ async fn settings_default_after_login() {
     assert_eq!(body["work_start"], "07:30");
     assert_eq!(body["work_end"], "16:15");
     assert_eq!(body["default_view"], "day");
+    assert!(body.get("slot_minutes").is_some());
+    assert_eq!(body["slot_minutes"], serde_json::Value::Null);
 }
 
 #[tokio::test]
@@ -865,6 +877,124 @@ async fn settings_patch_without_default_view_keeps_stored_value() {
     assert_eq!(body["work_start"], "09:00");
     assert_eq!(body["work_end"], "18:00");
     assert_eq!(body["default_view"], "week");
+}
+
+#[tokio::test]
+async fn settings_patch_slot_minutes_roundtrip() {
+    let ctx = TestCtx::new().await;
+    let cookie = ctx.login("admin", "password1").await;
+    let (status, body, _) = ctx
+        .request(
+            "PATCH",
+            "/api/settings",
+            Some(&cookie),
+            Some(json!({
+                "work_start": "08:00",
+                "work_end": "17:00",
+                "slot_minutes": 30
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["slot_minutes"], 30);
+
+    let (status, body, _) = ctx
+        .request("GET", "/api/settings", Some(&cookie), None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["slot_minutes"], 30);
+}
+
+#[tokio::test]
+async fn settings_patch_rejects_zero_and_negative_slot_minutes() {
+    let ctx = TestCtx::new().await;
+    let cookie = ctx.login("admin", "password1").await;
+    for value in [0, -1] {
+        let (status, body, _) = ctx
+            .request(
+                "PATCH",
+                "/api/settings",
+                Some(&cookie),
+                Some(json!({
+                    "work_start": "08:00",
+                    "work_end": "17:00",
+                    "slot_minutes": value
+                })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        assert_eq!(
+            body["error"],
+            "Slotdauer muss eine positive ganze Zahl in Minuten sein"
+        );
+    }
+}
+
+#[tokio::test]
+async fn settings_patch_without_slot_minutes_keeps_stored_value() {
+    let ctx = TestCtx::new().await;
+    let cookie = ctx.login("admin", "password1").await;
+    let (status, _, _) = ctx
+        .request(
+            "PATCH",
+            "/api/settings",
+            Some(&cookie),
+            Some(json!({
+                "work_start": "08:00",
+                "work_end": "17:00",
+                "slot_minutes": 15
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, body, _) = ctx
+        .request(
+            "PATCH",
+            "/api/settings",
+            Some(&cookie),
+            Some(json!({
+                "work_start": "09:00",
+                "work_end": "18:00"
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["slot_minutes"], 15);
+}
+
+#[tokio::test]
+async fn settings_patch_null_clears_slot_minutes() {
+    let ctx = TestCtx::new().await;
+    let cookie = ctx.login("admin", "password1").await;
+    let (status, _, _) = ctx
+        .request(
+            "PATCH",
+            "/api/settings",
+            Some(&cookie),
+            Some(json!({
+                "work_start": "08:00",
+                "work_end": "17:00",
+                "slot_minutes": 45
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, body, _) = ctx
+        .request(
+            "PATCH",
+            "/api/settings",
+            Some(&cookie),
+            Some(json!({
+                "work_start": "08:00",
+                "work_end": "17:00",
+                "slot_minutes": null
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["slot_minutes"], serde_json::Value::Null);
 }
 
 #[tokio::test]

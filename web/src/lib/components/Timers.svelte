@@ -4,6 +4,7 @@
 	import { formatWorkDuration } from '$lib/format';
 	import type { Entry, NamedItem, WorkInterval, WorkSnapshot } from '$lib/types';
 	import { workAllowsTimer } from '$lib/work-summary';
+	import { liveElapsedSeconds } from '$lib/work-transport';
 	import BreakWarnings from './BreakWarnings.svelte';
 	import NamedSelect from './NamedSelect.svelte';
 
@@ -33,14 +34,15 @@
 	const breakViolations = $derived(evaluateBreakCompliance(workIntervals, new Date(nowMs)));
 
 	$effect(() => {
-		displaySeconds = work?.elapsed_seconds ?? 0;
+		const base = work?.elapsed_seconds ?? 0;
+		const status = work?.status ?? null;
+		const origin = Date.now();
 		nowMs = Date.now();
-		if (work?.status !== 'running') return;
-		const started = Date.now();
-		const base = work.elapsed_seconds;
+		displaySeconds = liveElapsedSeconds(base, status, origin, nowMs);
+		if (status !== 'running') return;
 		const id = setInterval(() => {
-			displaySeconds = base + Math.floor((Date.now() - started) / 1000);
 			nowMs = Date.now();
+			displaySeconds = liveElapsedSeconds(base, status, origin, nowMs);
 		}, 1000);
 		return () => clearInterval(id);
 	});
@@ -55,16 +57,6 @@
 			boundTimerId = null;
 		}
 	});
-
-	async function call(path: string) {
-		error = '';
-		try {
-			await api(path, { method: 'POST', body: '{}' });
-			await onRefresh();
-		} catch (err) {
-			error = err instanceof Error ? err.message : 'Fehler';
-		}
-	}
 
 	async function startTimer() {
 		error = '';
@@ -118,29 +110,6 @@
 			<p class="text-xs text-muted">
 				{#if work?.status === 'running'}läuft{:else if work?.status === 'paused'}pausiert{:else}bereit{/if}
 			</p>
-		</div>
-		<div class="flex gap-2">
-			{#if work?.status !== 'running' && work?.status !== 'paused'}
-				<button class="rounded-md bg-go px-3 py-2 text-sm text-bg" onclick={() => call('/api/work-sessions/start')}
-					>Start</button
-				>
-			{/if}
-			{#if work?.status === 'running'}
-				<button class="rounded-md bg-panel-2 px-3 py-2 text-sm" onclick={() => call('/api/work-sessions/pause')}
-					>Pause</button
-				>
-				<button class="rounded-md bg-stop px-3 py-2 text-sm" onclick={() => call('/api/work-sessions/stop')}
-					>Stop</button
-				>
-			{/if}
-			{#if work?.status === 'paused'}
-				<button class="rounded-md bg-go px-3 py-2 text-sm text-bg" onclick={() => call('/api/work-sessions/resume')}
-					>Weiter</button
-				>
-				<button class="rounded-md bg-stop px-3 py-2 text-sm" onclick={() => call('/api/work-sessions/stop')}
-					>Stop</button
-				>
-			{/if}
 		</div>
 		<div class="ml-auto flex items-center gap-2">
 			{#if !timer}

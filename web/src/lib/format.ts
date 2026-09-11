@@ -14,6 +14,14 @@ export function formatHm(totalSeconds: number): string {
 	return `${hours}:${String(minutes).padStart(2, '0')}`;
 }
 
+export function formatHms(totalSeconds: number): string {
+	const seconds = Math.max(0, Math.floor(totalSeconds));
+	const hours = Math.floor(seconds / 3600);
+	const minutes = Math.floor((seconds % 3600) / 60);
+	const rest = seconds % 60;
+	return `${hours}:${String(minutes).padStart(2, '0')}:${String(rest).padStart(2, '0')}`;
+}
+
 export function durationBetween(startIso: string, endIso: string | null): number {
 	if (!endIso) return 0;
 	return Math.max(0, (Date.parse(endIso) - Date.parse(startIso)) / 1000);

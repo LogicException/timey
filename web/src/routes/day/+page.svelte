@@ -10,11 +10,13 @@
 	import { closeWorkModalState, intervalToForm, saveWorkPayload } from '$lib/day-work';
 	import { addDays, formatBerlinDate, formatBerlinTime } from '$lib/dates';
 	import { durationBetween, formatHm, totalDurationSeconds } from '$lib/format';
-	import { REFRESH_TIMERS_KEY, type RefreshTimers } from '$lib/timers-context';
-	import type { Entry, NamedItem, WorkDaySummary, WorkInterval } from '$lib/types';
+	import { latestStopIso, suggestedCreateClock } from '$lib/suggested-create-times';
+	import { REFRESH_TIMERS_KEY, WORK_CHANGED_KEY, type RefreshTimers, type WorkChangedBus } from '$lib/timers-context';
+	import type { Entry, NamedItem, UserSettings, WorkDaySummary, WorkInterval } from '$lib/types';
 	import { totalWorkSeconds } from '$lib/work-summary';
 
 	const refreshTimers = getContext<RefreshTimers>(REFRESH_TIMERS_KEY);
+	const workChanged = getContext<WorkChangedBus>(WORK_CHANGED_KEY);
 
 	let day = $state(formatBerlinDate(new Date()));
 	let entries = $state<Entry[]>([]);
@@ -39,6 +41,7 @@
 	let workEditing = $state<number | null>(null);
 	let workOpen = $state(false);
 	let workIntervalOpen = $state(false);
+	let slotMinutes = $state<number | null>(null);
 
 	const workIntervals = $derived(workDays.flatMap((item) => item.intervals ?? []));
 	const breakViolations = $derived(evaluateBreakCompliance(workIntervals));
@@ -51,16 +54,18 @@
 	}
 
 	async function load() {
-		const [entryRes, workRes, taskRes, projectRes] = await Promise.all([
+		const [entryRes, workRes, taskRes, projectRes, settings] = await Promise.all([
 			api<Entry[]>(`/api/entries?from=${day}&to=${day}`),
 			api<WorkDaySummary[]>(`/api/work-sessions?from=${day}&to=${day}`),
 			api<NamedItem[]>('/api/tasks'),
-			api<NamedItem[]>('/api/projects')
+			api<NamedItem[]>('/api/projects'),
+			api<UserSettings>('/api/settings')
 		]);
 		entries = entryRes;
 		workDays = workRes;
 		tasks = taskRes;
 		projects = projectRes;
+		slotMinutes = settings.slot_minutes;
 		if (taskId == null && tasks[0]) taskId = tasks[0].id;
 	}
 
@@ -68,6 +73,14 @@
 		void day;
 		void load().catch((err) => {
 			error = err instanceof Error ? err.message : 'Laden fehlgeschlagen';
+		});
+	});
+
+	$effect(() => {
+		return workChanged.subscribe(() => {
+			void load().catch((err) => {
+				error = err instanceof Error ? err.message : 'Laden fehlgeschlagen';
+			});
 		});
 	});
 
@@ -86,19 +99,33 @@
 		error = '';
 	}
 
-	function openCreate() {
+	async function suggestedClock(endAts: Array<string | null | undefined>) {
+		const stop = latestStopIso(endAts);
+		const startIso = stop ?? (await api<{ now: string }>('/api/health')).now;
+		return suggestedCreateClock(startIso, slotMinutes);
+	}
+
+	async function openCreate() {
 		editing = null;
 		error = '';
+		const clock = await suggestedClock(entries.map((entry) => entry.end_at));
+		fromH = clock.fromH;
+		fromM = clock.fromM;
+		toH = clock.toH;
+		toM = clock.toM;
 		open = true;
 	}
 
-	function openWorkCreate() {
+	async function openWorkCreate() {
 		workEditing = null;
 		workIntervalOpen = false;
-		workFromH = 8;
-		workFromM = 0;
-		workToH = 9;
-		workToM = 0;
+		const clock = await suggestedClock(
+			workIntervals.filter((interval) => !interval.open).map((interval) => interval.end_at)
+		);
+		workFromH = clock.fromH;
+		workFromM = clock.fromM;
+		workToH = clock.toH;
+		workToM = clock.toM;
 		error = '';
 		workOpen = true;
 	}
@@ -207,9 +234,6 @@
 		<div class="w-56"><DateField bind:value={day} label="Tag" /></div>
 		<button class="panel rounded-md px-3 py-2" onclick={() => (day = addDays(day, 1))}>→</button>
 		<button class="text-sm text-muted" onclick={() => (day = formatBerlinDate(new Date()))}>Heute</button>
-		<button class="ml-auto rounded-md bg-amber px-4 py-2 text-sm font-semibold text-bg" onclick={openCreate}
-			>Neuer Eintrag</button
-		>
 	</div>
 
 	{#if error && !open && !workOpen}
@@ -271,7 +295,9 @@
 					<th class="px-4 py-2">Dauer</th>
 					<th class="px-4 py-2">Task</th>
 					<th class="px-4 py-2">Projekt</th>
-					<th class="px-4 py-2"></th>
+					<th class="px-4 py-2 text-right">
+						<button class="text-xs font-semibold text-amber" onclick={openCreate}>Neuer Eintrag</button>
+					</th>
 				</tr>
 			</thead>
 			<tbody>

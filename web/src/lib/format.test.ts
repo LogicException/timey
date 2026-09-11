@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { durationBetween, formatHm, formatWorkDuration, totalDurationSeconds } from './format.ts';
+import { durationBetween, formatHm, formatHms, formatWorkDuration, totalDurationSeconds } from './format.ts';
 
 describe('formatWorkDuration', () => {
 	it('uses German plural labels', () => {
@@ -14,6 +14,20 @@ describe('formatWorkDuration', () => {
 describe('formatHm', () => {
 	it('pads minutes', () => {
 		expect(formatHm(90 * 60)).toBe('1:30');
+	});
+});
+
+describe('formatHms', () => {
+	it('pads minutes and seconds', () => {
+		expect(formatHms(5 * 60 + 7)).toBe('0:05:07');
+	});
+
+	it('formats a full hour', () => {
+		expect(formatHms(3600)).toBe('1:00:00');
+	});
+
+	it('returns zero for negative input', () => {
+		expect(formatHms(-12)).toBe('0:00:00');
 	});
 });
 
