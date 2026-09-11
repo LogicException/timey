@@ -1,3 +1,4 @@
+pub mod default_task;
 pub mod default_view;
 pub mod midnight;
 pub mod slot_minutes;
@@ -10,6 +11,7 @@ pub mod work_duration;
 pub mod work_interval;
 pub mod working_hours;
 
+pub use default_task::DefaultTaskId;
 pub use default_view::DefaultView;
 pub use slot_minutes::SlotMinutes;
 pub use midnight::{close_timestamp, needs_midnight_close};

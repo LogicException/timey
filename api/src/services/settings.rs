@@ -1,15 +1,18 @@
 use sqlx::{FromRow, SqlitePool};
 
+use crate::domain::default_task::DefaultTaskId;
 use crate::domain::default_view::DefaultView;
 use crate::domain::slot_minutes::SlotMinutes;
 use crate::domain::working_hours::WorkingHours;
 use crate::error::{AppError, AppResult};
+use crate::services::catalogs;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UserSettings {
     pub hours: WorkingHours,
     pub default_view: DefaultView,
     pub slot_minutes: SlotMinutes,
+    pub default_task_id: DefaultTaskId,
 }
 
 #[derive(Debug, FromRow)]
@@ -18,6 +21,7 @@ struct SettingsRow {
     work_end_minutes: i64,
     default_view: String,
     slot_minutes: Option<i64>,
+    default_task_id: Option<i64>,
 }
 
 impl SettingsRow {
@@ -29,10 +33,13 @@ impl SettingsRow {
         })?;
         let slot_minutes = SlotMinutes::parse(self.slot_minutes)
             .map_err(|err| AppError::Internal(err.message().into()))?;
+        let default_task_id = DefaultTaskId::parse(self.default_task_id)
+            .map_err(|err| AppError::Internal(err.message().into()))?;
         Ok(UserSettings {
             hours,
             default_view,
             slot_minutes,
+            default_task_id,
         })
     }
 }
@@ -42,6 +49,7 @@ fn default_settings() -> UserSettings {
         hours: WorkingHours::default(),
         default_view: DefaultView::default(),
         slot_minutes: SlotMinutes::default(),
+        default_task_id: DefaultTaskId::default(),
     }
 }
 
@@ -64,7 +72,7 @@ pub async fn insert_defaults(pool: &SqlitePool, user_id: i64) -> AppResult<()> {
 
 pub async fn get_or_default(pool: &SqlitePool, user_id: i64) -> AppResult<UserSettings> {
     let row = sqlx::query_as::<_, SettingsRow>(
-        "SELECT work_start_minutes, work_end_minutes, default_view, slot_minutes
+        "SELECT work_start_minutes, work_end_minutes, default_view, slot_minutes, default_task_id
          FROM user_settings WHERE user_id = ?",
     )
     .bind(user_id)
@@ -79,6 +87,31 @@ pub async fn get_or_default(pool: &SqlitePool, user_id: i64) -> AppResult<UserSe
     Ok(default_settings())
 }
 
+async fn parse_default_task(
+    pool: &SqlitePool,
+    user_id: i64,
+    value: Option<i64>,
+) -> AppResult<DefaultTaskId> {
+    let parsed = DefaultTaskId::parse(value)
+        .map_err(|err| AppError::Unprocessable(err.message().into()))?;
+    let Some(task_id) = parsed.stored() else {
+        return Ok(parsed);
+    };
+    let task = match catalogs::get_task(pool, user_id, task_id).await {
+        Ok(task) => task,
+        Err(AppError::NotFound) => {
+            return Err(AppError::Unprocessable("Standard-Task nicht gefunden".into()));
+        }
+        Err(err) => return Err(err),
+    };
+    if task.archived {
+        return Err(AppError::Unprocessable(
+            "Standard-Task ist archiviert".into(),
+        ));
+    }
+    Ok(parsed)
+}
+
 pub async fn update(
     pool: &SqlitePool,
     user_id: i64,
@@ -86,6 +119,7 @@ pub async fn update(
     work_end: &str,
     default_view: Option<&str>,
     slot_minutes: Option<Option<i64>>,
+    default_task_id: Option<Option<i64>>,
 ) -> AppResult<UserSettings> {
     let hours = WorkingHours::parse(work_start, work_end)
         .map_err(|err| AppError::Unprocessable(err.message().into()))?;
@@ -101,25 +135,32 @@ pub async fn update(
             .map_err(|err| AppError::Unprocessable(err.message().into()))?,
         None => current.slot_minutes,
     };
+    let default_task_id = match default_task_id {
+        Some(value) => parse_default_task(pool, user_id, value).await?,
+        None => current.default_task_id,
+    };
     sqlx::query(
-        "INSERT INTO user_settings (user_id, work_start_minutes, work_end_minutes, default_view, slot_minutes)
-         VALUES (?, ?, ?, ?, ?)
+        "INSERT INTO user_settings (user_id, work_start_minutes, work_end_minutes, default_view, slot_minutes, default_task_id)
+         VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT(user_id) DO UPDATE SET
             work_start_minutes = excluded.work_start_minutes,
             work_end_minutes = excluded.work_end_minutes,
             default_view = excluded.default_view,
-            slot_minutes = excluded.slot_minutes",
+            slot_minutes = excluded.slot_minutes,
+            default_task_id = excluded.default_task_id",
     )
     .bind(user_id)
     .bind(hours.start_minutes)
     .bind(hours.end_minutes)
     .bind(default_view.as_str())
     .bind(slot_minutes.stored())
+    .bind(default_task_id.stored())
     .execute(pool)
     .await?;
     Ok(UserSettings {
         hours,
         default_view,
         slot_minutes,
+        default_task_id,
     })
 }

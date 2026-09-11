@@ -15,6 +15,7 @@
 		isoToBerlinHoursMinutes,
 		startOfWeek
 	} from '$lib/dates';
+	import { suggestedTaskId } from '$lib/default-task';
 	import { latestStopIso, suggestedCreateClock } from '$lib/suggested-create-times';
 	import { applyBerlinTimes, entryToEditState, savePayload } from '$lib/week-entry';
 	import { calendarEventColors, weekTimeGridLayout } from '$lib/week-calendar';
@@ -40,6 +41,7 @@
 	let taskId = $state<number | null>(null);
 	let projectId = $state<number | null>(null);
 	let slotMinutes: number | null = null;
+	let defaultTaskId: number | null = null;
 
 	const workChanged = getContext<WorkChangedBus>(WORK_CHANGED_KEY);
 
@@ -79,7 +81,7 @@
 		const clock = suggestedCreateClock(startSource, slotMinutes);
 		startIso = berlinLocalToUtc(day, clock.fromH, clock.fromM).toISOString();
 		endIso = berlinLocalToUtc(day, clock.toH, clock.toM).toISOString();
-		taskId = tasks[0]?.id ?? null;
+		taskId = suggestedTaskId(tasks, defaultTaskId);
 		projectId = null;
 		editingId = null;
 		syncTimeFields();
@@ -137,6 +139,7 @@
 				workStart = settings.work_start;
 				workEnd = settings.work_end;
 				slotMinutes = settings.slot_minutes;
+				defaultTaskId = settings.default_task_id;
 			} catch {
 				// keep defaults
 			}
@@ -188,7 +191,7 @@
 			]).then(([t, p]) => {
 				tasks = t;
 				projects = p;
-				taskId = t[0]?.id ?? null;
+				taskId = suggestedTaskId(t, defaultTaskId);
 			});
 		})();
 		return () => {

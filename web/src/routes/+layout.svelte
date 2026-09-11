@@ -9,7 +9,7 @@
 	import { setContext } from 'svelte';
 	import { REFRESH_TIMERS_KEY, WORK_CHANGED_KEY, createWorkChangedBus } from '$lib/timers-context';
 	import { formatBerlinDate } from '$lib/dates';
-	import type { Entry, NamedItem, User, WorkDaySummary, WorkInterval, WorkSnapshot } from '$lib/types';
+	import type { Entry, NamedItem, User, UserSettings, WorkDaySummary, WorkInterval, WorkSnapshot } from '$lib/types';
 
 	let { children } = $props();
 
@@ -20,6 +20,7 @@
 	let timer = $state<Entry | null>(null);
 	let tasks = $state<NamedItem[]>([]);
 	let projects = $state<NamedItem[]>([]);
+	let defaultTaskId = $state<number | null>(null);
 
 	const publicPath = $derived(page.url.pathname === '/login');
 
@@ -43,18 +44,20 @@
 
 	async function refreshTimers() {
 		const today = formatBerlinDate(new Date());
-		const [workRes, timerRes, taskRes, projectRes, workDays] = await Promise.all([
+		const [workRes, timerRes, taskRes, projectRes, workDays, settings] = await Promise.all([
 			api<WorkSnapshot>('/api/work-sessions/current'),
 			api<Entry | null>('/api/entries/timer'),
 			api<NamedItem[]>('/api/tasks'),
 			api<NamedItem[]>('/api/projects'),
-			api<WorkDaySummary[]>(`/api/work-sessions?from=${today}&to=${today}`)
+			api<WorkDaySummary[]>(`/api/work-sessions?from=${today}&to=${today}`),
+			api<UserSettings>('/api/settings')
 		]);
 		work = workRes;
 		timer = timerRes;
 		tasks = taskRes;
 		projects = projectRes;
 		workIntervals = workDays.flatMap((day) => day.intervals ?? []);
+		defaultTaskId = settings.default_task_id;
 		await workChanged.notify();
 	}
 
@@ -85,6 +88,7 @@
 		{timer}
 		{tasks}
 		{projects}
+		{defaultTaskId}
 		onRefresh={refreshTimers}
 	/>
 	<div class="mx-auto flex min-h-screen max-w-6xl flex-col gap-4 px-4 py-6">

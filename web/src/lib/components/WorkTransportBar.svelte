@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { api } from '$lib/api';
 	import { evaluateBreakCompliance } from '$lib/break-compliance';
+	import { suggestedTaskId } from '$lib/default-task';
 	import { formatHms } from '$lib/format';
 	import type { Entry, NamedItem, WorkInterval, WorkSnapshot } from '$lib/types';
 	import {
@@ -25,6 +26,7 @@
 		timer,
 		tasks,
 		projects,
+		defaultTaskId = null,
 		onRefresh
 	}: {
 		work: WorkSnapshot | null;
@@ -32,6 +34,7 @@
 		timer: Entry | null;
 		tasks: NamedItem[];
 		projects: NamedItem[];
+		defaultTaskId?: number | null;
 		onRefresh: () => Promise<void>;
 	} = $props();
 
@@ -85,7 +88,7 @@
 	}
 
 	function openAssignment(entry: Entry) {
-		draftTaskId = entry.task_id;
+		draftTaskId = entry.task_id ?? suggestedTaskId(tasks, defaultTaskId, 'none');
 		draftProjectId = entry.project_id;
 		modalError = '';
 		assignmentOpen = true;

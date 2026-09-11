@@ -10,6 +10,7 @@
 	import { closeWorkModalState, intervalToForm, saveWorkPayload, workIntervalsNewestFirst } from '$lib/day-work';
 	import { addDays, formatBerlinDate, formatBerlinTime } from '$lib/dates';
 	import { durationBetween, formatHm, totalDurationSeconds } from '$lib/format';
+	import { suggestedTaskId } from '$lib/default-task';
 	import { latestStopIso, suggestedCreateClock } from '$lib/suggested-create-times';
 	import { REFRESH_TIMERS_KEY, WORK_CHANGED_KEY, type RefreshTimers, type WorkChangedBus } from '$lib/timers-context';
 	import type { Entry, NamedItem, UserSettings, WorkDaySummary, WorkInterval } from '$lib/types';
@@ -42,6 +43,7 @@
 	let workOpen = $state(false);
 	let workIntervalOpen = $state(false);
 	let slotMinutes = $state<number | null>(null);
+	let defaultTaskId = $state<number | null>(null);
 
 	const workIntervals = $derived(workDays.flatMap((item) => item.intervals ?? []));
 	const breakViolations = $derived(evaluateBreakCompliance(workIntervals));
@@ -67,7 +69,8 @@
 		tasks = taskRes;
 		projects = projectRes;
 		slotMinutes = settings.slot_minutes;
-		if (taskId == null && tasks[0]) taskId = tasks[0].id;
+		defaultTaskId = settings.default_task_id;
+		if (taskId == null) taskId = suggestedTaskId(tasks, defaultTaskId);
 	}
 
 	$effect(() => {
@@ -114,6 +117,8 @@
 		fromM = clock.fromM;
 		toH = clock.toH;
 		toM = clock.toM;
+		taskId = suggestedTaskId(tasks, defaultTaskId);
+		projectId = null;
 		open = true;
 	}
 

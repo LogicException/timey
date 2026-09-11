@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { api } from '$lib/api';
+	import NamedSelect from '$lib/components/NamedSelect.svelte';
 	import TimeField from '$lib/components/TimeField.svelte';
 	import type { DefaultView } from '$lib/default-view';
-	import type { UserSettings } from '$lib/types';
+	import type { NamedItem, UserSettings } from '$lib/types';
 	import { DEFAULT_SLOT_MINUTES, parseSlotMinutesInput } from '$lib/slot-minutes';
 	import { DEFAULT_WORK_END, DEFAULT_WORK_START, joinHm, splitHm } from '$lib/working-hours';
 
@@ -12,6 +13,8 @@
 	let endM = $state(15);
 	let defaultView = $state<DefaultView>('day');
 	let slotMinutesInput = $state('');
+	let defaultTaskId = $state<number | null>(null);
+	let tasks = $state<NamedItem[]>([]);
 	let error = $state('');
 	let saved = $state(false);
 
@@ -24,10 +27,15 @@
 		endM = end.minutes;
 		defaultView = settings.default_view;
 		slotMinutesInput = settings.slot_minutes == null ? '' : String(settings.slot_minutes);
+		defaultTaskId = settings.default_task_id;
 	}
 
 	async function load() {
-		const settings = await api<UserSettings>('/api/settings');
+		const [settings, taskRes] = await Promise.all([
+			api<UserSettings>('/api/settings'),
+			api<NamedItem[]>('/api/tasks')
+		]);
+		tasks = taskRes;
 		apply(settings);
 	}
 
@@ -38,7 +46,8 @@
 				work_start: DEFAULT_WORK_START,
 				work_end: DEFAULT_WORK_END,
 				default_view: 'day',
-				slot_minutes: null
+				slot_minutes: null,
+				default_task_id: null
 			});
 		});
 	});
@@ -58,7 +67,8 @@
 					work_start: joinHm(startH, startM),
 					work_end: joinHm(endH, endM),
 					default_view: defaultView,
-					slot_minutes: parsed.value
+					slot_minutes: parsed.value,
+					default_task_id: defaultTaskId
 				})
 			});
 			apply(settings);
@@ -116,6 +126,11 @@
 					bind:value={slotMinutesInput}
 				/>
 			</label>
+		</div>
+		<div class="space-y-3">
+			<h3 class="text-base">Standard-Task</h3>
+			<p class="text-sm text-muted">Beim Erfassen neuer Einträge wird dieser Task vorausgewählt.</p>
+			<NamedSelect label="Task" items={tasks} bind:value={defaultTaskId} optional />
 		</div>
 		{#if error}
 			<p class="text-sm text-stop">{error}</p>

@@ -11,6 +11,7 @@ export type UserSettings = {
 	work_end: string;
 	default_view: 'day' | 'week';
 	slot_minutes: number | null;
+	default_task_id: number | null;
 };
 
 export type AuthConfig = {

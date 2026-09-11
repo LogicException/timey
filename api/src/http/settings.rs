@@ -13,6 +13,7 @@ pub struct SettingsView {
     work_end: String,
     default_view: String,
     slot_minutes: Option<i64>,
+    default_task_id: Option<i64>,
 }
 
 impl From<UserSettings> for SettingsView {
@@ -22,6 +23,7 @@ impl From<UserSettings> for SettingsView {
             work_end: settings.hours.work_end(),
             default_view: settings.default_view.as_str().to_string(),
             slot_minutes: settings.slot_minutes.stored(),
+            default_task_id: settings.default_task_id.stored(),
         }
     }
 }
@@ -41,6 +43,8 @@ pub struct PatchSettings {
     default_view: Option<String>,
     #[serde(default, deserialize_with = "deserialize_double_option")]
     slot_minutes: Option<Option<i64>>,
+    #[serde(default, deserialize_with = "deserialize_double_option")]
+    default_task_id: Option<Option<i64>>,
 }
 
 pub async fn get_settings(
@@ -63,6 +67,7 @@ pub async fn patch_settings(
         &body.work_end,
         body.default_view.as_deref(),
         body.slot_minutes,
+        body.default_task_id,
     )
     .await?;
     Ok(Json(SettingsView::from(settings)))

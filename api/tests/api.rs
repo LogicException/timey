@@ -705,6 +705,8 @@ async fn settings_default_after_login() {
     assert_eq!(body["default_view"], "day");
     assert!(body.get("slot_minutes").is_some());
     assert_eq!(body["slot_minutes"], serde_json::Value::Null);
+    assert!(body.get("default_task_id").is_some());
+    assert_eq!(body["default_task_id"], serde_json::Value::Null);
 }
 
 #[tokio::test]
@@ -995,6 +997,134 @@ async fn settings_patch_null_clears_slot_minutes() {
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["slot_minutes"], serde_json::Value::Null);
+}
+
+#[tokio::test]
+async fn settings_patch_default_task_id_roundtrip() {
+    let ctx = TestCtx::new().await;
+    let cookie = ctx.login("admin", "password1").await;
+    let (_, tasks, _) = ctx.request("GET", "/api/tasks", Some(&cookie), None).await;
+    let task_id = task_id_by_name(&tasks, "Coding");
+
+    let (status, body, _) = ctx
+        .request(
+            "PATCH",
+            "/api/settings",
+            Some(&cookie),
+            Some(json!({
+                "work_start": "08:00",
+                "work_end": "17:00",
+                "default_task_id": task_id
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["default_task_id"], task_id);
+
+    let (status, body, _) = ctx
+        .request("GET", "/api/settings", Some(&cookie), None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["default_task_id"], task_id);
+}
+
+#[tokio::test]
+async fn settings_patch_rejects_unknown_and_invalid_default_task_id() {
+    let ctx = TestCtx::new().await;
+    let cookie = ctx.login("admin", "password1").await;
+    for (value, message) in [
+        (json!(0), "Standard-Task ist ungültig"),
+        (json!(-1), "Standard-Task ist ungültig"),
+        (json!(9_999_999), "Standard-Task nicht gefunden"),
+    ] {
+        let (status, body, _) = ctx
+            .request(
+                "PATCH",
+                "/api/settings",
+                Some(&cookie),
+                Some(json!({
+                    "work_start": "08:00",
+                    "work_end": "17:00",
+                    "default_task_id": value
+                })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        assert_eq!(body["error"], message);
+    }
+}
+
+#[tokio::test]
+async fn settings_patch_without_default_task_id_keeps_stored_value() {
+    let ctx = TestCtx::new().await;
+    let cookie = ctx.login("admin", "password1").await;
+    let (_, tasks, _) = ctx.request("GET", "/api/tasks", Some(&cookie), None).await;
+    let task_id = task_id_by_name(&tasks, "Coding");
+
+    let (status, _, _) = ctx
+        .request(
+            "PATCH",
+            "/api/settings",
+            Some(&cookie),
+            Some(json!({
+                "work_start": "08:00",
+                "work_end": "17:00",
+                "default_task_id": task_id
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, body, _) = ctx
+        .request(
+            "PATCH",
+            "/api/settings",
+            Some(&cookie),
+            Some(json!({
+                "work_start": "09:00",
+                "work_end": "17:00"
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["default_task_id"], task_id);
+}
+
+#[tokio::test]
+async fn settings_patch_null_clears_default_task_id() {
+    let ctx = TestCtx::new().await;
+    let cookie = ctx.login("admin", "password1").await;
+    let (_, tasks, _) = ctx.request("GET", "/api/tasks", Some(&cookie), None).await;
+    let task_id = task_id_by_name(&tasks, "Coding");
+
+    let (status, _, _) = ctx
+        .request(
+            "PATCH",
+            "/api/settings",
+            Some(&cookie),
+            Some(json!({
+                "work_start": "08:00",
+                "work_end": "17:00",
+                "default_task_id": task_id
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, body, _) = ctx
+        .request(
+            "PATCH",
+            "/api/settings",
+            Some(&cookie),
+            Some(json!({
+                "work_start": "08:00",
+                "work_end": "17:00",
+                "default_task_id": null
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["default_task_id"], serde_json::Value::Null);
 }
 
 #[tokio::test]
