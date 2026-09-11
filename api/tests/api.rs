@@ -98,6 +98,61 @@ async fn start_work(ctx: &TestCtx, cookie: &str) {
     assert_eq!(status, StatusCode::OK, "{body}");
 }
 
+async fn start_timer(ctx: &TestCtx, cookie: &str) -> Value {
+    let (status, running, _) = ctx
+        .request(
+            "POST",
+            "/api/entries/timer/start",
+            Some(cookie),
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{running}");
+    running
+}
+
+async fn assign_running_task(ctx: &TestCtx, cookie: &str, running: &Value, task_id: i64) {
+    let id = running["id"].as_i64().expect("id");
+    let (status, assigned, _) = ctx
+        .request(
+            "PATCH",
+            &format!("/api/entries/{id}"),
+            Some(cookie),
+            Some(json!({
+                "task_id": task_id,
+                "start_at": running["start_at"]
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{assigned}");
+}
+
+async fn first_task_id(ctx: &TestCtx, cookie: &str) -> i64 {
+    let (_, tasks, _) = ctx.request("GET", "/api/tasks", Some(cookie), None).await;
+    tasks[0]["id"].as_i64().expect("id")
+}
+
+async fn assert_no_running_timer(ctx: &TestCtx, cookie: &str) {
+    let (status, timer, _) = ctx
+        .request("GET", "/api/entries/timer", Some(cookie), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(timer.is_null(), "{timer}");
+}
+
+async fn list_entries(ctx: &TestCtx, cookie: &str) -> Vec<Value> {
+    let (status, entries, _) = ctx
+        .request(
+            "GET",
+            "/api/entries?from=2020-01-01&to=2099-12-31",
+            Some(cookie),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{entries}");
+    entries.as_array().expect("array").clone()
+}
+
 fn parse_session_cookie(header: &str) -> Option<&str> {
     header.split(';').next()?.strip_prefix("timey_session=")
 }
@@ -373,27 +428,12 @@ async fn timer_start_while_work_paused_is_rejected() {
 }
 
 #[tokio::test]
-async fn work_pause_rejected_while_timer_running() {
+async fn work_pause_discards_unsigned_running_timer() {
     let ctx = TestCtx::new().await;
     let cookie = ctx.login("admin", "password1").await;
-    let (status, _, _) = ctx
-        .request(
-            "POST",
-            "/api/work-sessions/start",
-            Some(&cookie),
-            Some(json!({})),
-        )
-        .await;
-    assert_eq!(status, StatusCode::OK);
-    let (status, _, _) = ctx
-        .request(
-            "POST",
-            "/api/entries/timer/start",
-            Some(&cookie),
-            Some(json!({})),
-        )
-        .await;
-    assert_eq!(status, StatusCode::OK);
+    start_work(&ctx, &cookie).await;
+    let running = start_timer(&ctx, &cookie).await;
+    let running_id = running["id"].as_i64().expect("id");
 
     let (status, body, _) = ctx
         .request(
@@ -403,32 +443,24 @@ async fn work_pause_rejected_while_timer_running() {
             Some(json!({})),
         )
         .await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
-    assert_eq!(body["error"], "Zuerst den laufenden Eintrag stoppen");
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["status"], "paused");
+    assert_no_running_timer(&ctx, &cookie).await;
+    assert!(
+        list_entries(&ctx, &cookie)
+            .await
+            .iter()
+            .all(|entry| entry["id"] != running_id)
+    );
 }
 
 #[tokio::test]
-async fn work_stop_rejected_while_timer_running() {
+async fn work_stop_discards_unsigned_running_timer() {
     let ctx = TestCtx::new().await;
     let cookie = ctx.login("admin", "password1").await;
-    let (status, _, _) = ctx
-        .request(
-            "POST",
-            "/api/work-sessions/start",
-            Some(&cookie),
-            Some(json!({})),
-        )
-        .await;
-    assert_eq!(status, StatusCode::OK);
-    let (status, _, _) = ctx
-        .request(
-            "POST",
-            "/api/entries/timer/start",
-            Some(&cookie),
-            Some(json!({})),
-        )
-        .await;
-    assert_eq!(status, StatusCode::OK);
+    start_work(&ctx, &cookie).await;
+    let running = start_timer(&ctx, &cookie).await;
+    let running_id = running["id"].as_i64().expect("id");
 
     let (status, body, _) = ctx
         .request(
@@ -438,8 +470,75 @@ async fn work_stop_rejected_while_timer_running() {
             Some(json!({})),
         )
         .await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
-    assert_eq!(body["error"], "Zuerst den laufenden Eintrag stoppen");
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body["status"].is_null(), "{body}");
+    assert_no_running_timer(&ctx, &cookie).await;
+    assert!(
+        list_entries(&ctx, &cookie)
+            .await
+            .iter()
+            .all(|entry| entry["id"] != running_id)
+    );
+}
+
+#[tokio::test]
+async fn work_pause_completes_assigned_running_timer() {
+    let ctx = TestCtx::new().await;
+    let cookie = ctx.login("admin", "password1").await;
+    start_work(&ctx, &cookie).await;
+    let running = start_timer(&ctx, &cookie).await;
+    let running_id = running["id"].as_i64().expect("id");
+    let task_id = first_task_id(&ctx, &cookie).await;
+    assign_running_task(&ctx, &cookie, &running, task_id).await;
+
+    let (status, body, _) = ctx
+        .request(
+            "POST",
+            "/api/work-sessions/pause",
+            Some(&cookie),
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["status"], "paused");
+    assert_no_running_timer(&ctx, &cookie).await;
+    let entry = list_entries(&ctx, &cookie)
+        .await
+        .into_iter()
+        .find(|entry| entry["id"] == running_id)
+        .expect("saved entry");
+    assert_eq!(entry["status"], "complete");
+    assert_eq!(entry["task_id"], task_id);
+}
+
+#[tokio::test]
+async fn work_stop_completes_assigned_running_timer() {
+    let ctx = TestCtx::new().await;
+    let cookie = ctx.login("admin", "password1").await;
+    start_work(&ctx, &cookie).await;
+    let running = start_timer(&ctx, &cookie).await;
+    let running_id = running["id"].as_i64().expect("id");
+    let task_id = first_task_id(&ctx, &cookie).await;
+    assign_running_task(&ctx, &cookie, &running, task_id).await;
+
+    let (status, body, _) = ctx
+        .request(
+            "POST",
+            "/api/work-sessions/stop",
+            Some(&cookie),
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body["status"].is_null(), "{body}");
+    assert_no_running_timer(&ctx, &cookie).await;
+    let entry = list_entries(&ctx, &cookie)
+        .await
+        .into_iter()
+        .find(|entry| entry["id"] == running_id)
+        .expect("saved entry");
+    assert_eq!(entry["status"], "complete");
+    assert_eq!(entry["task_id"], task_id);
 }
 
 #[tokio::test]

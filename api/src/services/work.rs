@@ -8,7 +8,7 @@ use crate::domain::{
 };
 use crate::error::{AppError, AppResult};
 use crate::models::{WorkEventRow, WorkSessionRow, WorkSessionStatus, parse_date, parse_rfc3339};
-use crate::services::entries::today;
+use crate::services::entries::{end_running_timer_if_any, today};
 
 pub struct WorkSnapshot {
     pub session: Option<WorkSessionRow>,
@@ -146,7 +146,7 @@ pub async fn require_running(pool: &SqlitePool, user_id: i64, now: DateTime<Utc>
 }
 
 pub async fn pause(pool: &SqlitePool, user_id: i64, now: DateTime<Utc>) -> AppResult<WorkSnapshot> {
-    reject_if_entry_running(pool, user_id).await?;
+    end_running_timer_if_any(pool, user_id, now).await?;
     let session = require_status(pool, user_id, now, WorkSessionStatus::Running).await?;
     set_status(pool, session.id, WorkSessionStatus::Paused).await?;
     insert_event(pool, session.id, WorkEventKind::Paused, now).await?;
@@ -168,7 +168,7 @@ pub async fn resume(
 }
 
 pub async fn stop(pool: &SqlitePool, user_id: i64, now: DateTime<Utc>) -> AppResult<WorkSnapshot> {
-    reject_if_entry_running(pool, user_id).await?;
+    end_running_timer_if_any(pool, user_id, now).await?;
     let local_date = today(now);
     let session = open_session(pool, user_id, local_date)
         .await?
@@ -464,18 +464,6 @@ async fn delete_event(pool: &SqlitePool, id: i64) -> AppResult<()> {
         .bind(id)
         .execute(pool)
         .await?;
-    Ok(())
-}
-
-async fn reject_if_entry_running(pool: &SqlitePool, user_id: i64) -> AppResult<()> {
-    if crate::services::entries::running_entry(pool, user_id)
-        .await?
-        .is_some()
-    {
-        return Err(AppError::Unprocessable(
-            "Zuerst den laufenden Eintrag stoppen".into(),
-        ));
-    }
     Ok(())
 }
 

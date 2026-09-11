@@ -221,6 +221,25 @@ pub async fn stop_timer(
     .await
 }
 
+pub async fn end_running_timer_if_any(
+    pool: &SqlitePool,
+    user_id: i64,
+    now: DateTime<Utc>,
+) -> AppResult<()> {
+    let Some(running) = running_entry(pool, user_id).await? else {
+        return Ok(());
+    };
+    match running.task_id {
+        Some(task_id) => {
+            stop_timer(pool, user_id, task_id, running.project_id, now).await?;
+        }
+        None => {
+            delete_entry(pool, user_id, running.id).await?;
+        }
+    }
+    Ok(())
+}
+
 pub async fn running_entry(pool: &SqlitePool, user_id: i64) -> AppResult<Option<EntryRow>> {
     let sql = entry_select_sql("e.user_id = ? AND e.status = 'running'");
     Ok(sqlx::query_as::<_, EntryRow>(&sql)
