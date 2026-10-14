@@ -34,3 +34,21 @@ export function liveElapsedSeconds(
 	if (status !== 'running') return elapsedSeconds;
 	return elapsedSeconds + Math.max(0, Math.floor((nowMs - originMs) / 1000));
 }
+
+export function bindLiveClock(
+	elapsedSeconds: number,
+	status: WorkStatus,
+	hasOpenInterval: boolean,
+	onTick: (displaySeconds: number, nowMs: number) => void,
+	now: () => number = Date.now
+): () => void {
+	const origin = now();
+	const tick = () => {
+		const current = now();
+		onTick(liveElapsedSeconds(elapsedSeconds, status, origin, current), current);
+	};
+	tick();
+	if (status !== 'running' && !hasOpenInterval) return () => {};
+	const id = setInterval(tick, 1000);
+	return () => clearInterval(id);
+}
