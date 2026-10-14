@@ -11,11 +11,7 @@
 		timerAssignmentPayload
 	} from '$lib/work-summary';
 	import type { WorkTransportAction } from '$lib/work-transport';
-	import {
-		liveElapsedSeconds,
-		workSessionPath,
-		workTransportBarVisible
-	} from '$lib/work-transport';
+	import { bindLiveClock, workSessionPath, workTransportBarVisible } from '$lib/work-transport';
 	import BreakWarningMark from './BreakWarningMark.svelte';
 	import NamedSelect from './NamedSelect.svelte';
 	import TransportControls from './TransportControls.svelte';
@@ -54,16 +50,11 @@
 	$effect(() => {
 		const base = work?.elapsed_seconds ?? 0;
 		const status = work?.status ?? null;
-		const origin = Date.now();
-		nowMs = Date.now();
-		displaySeconds = liveElapsedSeconds(base, status, origin, nowMs);
 		const openInterval = workIntervals.some((interval) => interval.open);
-		if (status !== 'running' && !openInterval) return;
-		const id = setInterval(() => {
-			nowMs = Date.now();
-			displaySeconds = liveElapsedSeconds(base, status, origin, nowMs);
-		}, 1000);
-		return () => clearInterval(id);
+		return bindLiveClock(base, status, openInterval, (seconds, nextNow) => {
+			displaySeconds = seconds;
+			nowMs = nextNow;
+		});
 	});
 
 	async function onAction(action: WorkTransportAction) {
